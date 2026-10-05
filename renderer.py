@@ -10,15 +10,65 @@ from helpers import current_player, get_owner
 
 ASSET_DIR = Path(__file__).resolve().parent / "assets"
 
-def get_font(size, bold=False):
+_FONT_CACHE_DIR = Path("/tmp/taiwan_monopoly_fonts")
+_CJK_FONT_URL = "https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/TraditionalChinese/NotoSansCJKtc-Regular.otf"
+_CJK_FONT_CACHE = None
+
+
+def _resolve_cjk_font():
+    """取得可顯示繁體中文的字型；Render 沒有中文字型時自動快取一份到 /tmp。"""
+    global _CJK_FONT_CACHE
+    if _CJK_FONT_CACHE and Path(_CJK_FONT_CACHE).exists():
+        return _CJK_FONT_CACHE
+
+    # 常見 Linux / Render / 本機字型位置。
     candidates = [
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc" if bold else "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJKtc-Regular.otf",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJKtc-Regular.otf",
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+        "/usr/share/fonts/truetype/arphic/uming.ttc",
+        "/System/Library/Fonts/PingFang.ttc",
+        "C:/Windows/Fonts/msjh.ttc",
+        "C:/Windows/Fonts/mingliu.ttc",
+    ]
+    for candidate in candidates:
+        if Path(candidate).exists():
+            _CJK_FONT_CACHE = candidate
+            return candidate
+
+    # Render Free 常沒有 CJK 字型；只在缺字型時下載一次到 /tmp。
+    try:
+        import urllib.request
+        _FONT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cached = _FONT_CACHE_DIR / "NotoSansCJKtc-Regular.otf"
+        if not cached.exists() or cached.stat().st_size < 1_000_000:
+            urllib.request.urlretrieve(_CJK_FONT_URL, cached)
+        _CJK_FONT_CACHE = str(cached)
+        return _CJK_FONT_CACHE
+    except Exception as exc:
+        # 失敗時仍讓 Bot 繼續跑；只是圖片中文字可能退回方框。
+        import logging
+        logging.warning("無法取得繁體中文字型：%s", exc)
+        return None
+
+
+def get_font(size, bold=False):
+    cjk = _resolve_cjk_font()
+    if cjk:
+        try:
+            # 同一套 TC 字型同時用於一般與粗體；粗體視覺由較大字級/描邊輔助。
+            return ImageFont.truetype(cjk, size)
+        except Exception:
+            pass
+
+    candidates = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "arialbd.ttf" if bold else "arial.ttf",
     ]
-    for path in candidates:
+    for candidate in candidates:
         try:
-            return ImageFont.truetype(path, size)
+            return ImageFont.truetype(candidate, size)
         except Exception:
             pass
     return ImageFont.load_default()
