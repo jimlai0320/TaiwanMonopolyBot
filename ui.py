@@ -121,26 +121,24 @@ def private_keyboard(game: Game, player: Player):
     return InlineKeyboardMarkup(rows)
 
 async def safe_edit_or_send_board(game: Game, context):
-    """32 格版直接使用一張完整棋盤；尺寸已縮短，Telegram 內可直接觀看。"""
+    """32 格版使用上下兩張棋盤圖，讓 Telegram 內顯示更大。"""
     caption = board_caption(game)
     markup = board_keyboard(game, context.bot.username or "")
-    board_img = generate_board_image(game)
+    top_img, bottom_img = generate_group_board_images(game)
 
-    if game.board_message_id:
+    if game.board_message_id and game.board_message_id2:
         try:
             await context.bot.edit_message_media(
                 chat_id=game.chat_id,
                 message_id=game.board_message_id,
-                media=InputMediaPhoto(media=board_img, caption=caption, parse_mode="HTML"),
+                media=InputMediaPhoto(media=top_img),
+            )
+            await context.bot.edit_message_media(
+                chat_id=game.chat_id,
+                message_id=game.board_message_id2,
+                media=InputMediaPhoto(media=bottom_img, caption=caption, parse_mode="HTML"),
                 reply_markup=markup,
             )
-            # 舊雙圖版本若殘留第二張，移除一次。
-            if game.board_message_id2:
-                try:
-                    await context.bot.delete_message(chat_id=game.chat_id, message_id=game.board_message_id2)
-                except Exception:
-                    pass
-                game.board_message_id2 = None
             return
         except BadRequest as e:
             if "Message is not modified" in str(e):
@@ -148,9 +146,9 @@ async def safe_edit_or_send_board(game: Game, context):
         except RetryAfter as e:
             await asyncio.sleep(float(e.retry_after))
         except Exception:
-            logging.exception("更新群組棋盤失敗")
+            logging.exception("更新群組雙圖棋盤失敗")
 
-    # 舊訊息殘留時先清掉。
+    # 若舊版只留一張或殘留兩張，先清掉再重送
     for mid in (game.board_message_id, game.board_message_id2):
         if mid:
             try:
@@ -161,21 +159,27 @@ async def safe_edit_or_send_board(game: Game, context):
     game.board_message_id2 = None
 
     try:
-        msg = await context.bot.send_photo(
+        msg1 = await context.bot.send_photo(
             chat_id=game.chat_id,
-            photo=board_img,
+            photo=top_img,
+        )
+        msg2 = await context.bot.send_photo(
+            chat_id=game.chat_id,
+            photo=bottom_img,
             caption=caption,
             reply_markup=markup,
             parse_mode="HTML",
         )
-        game.board_message_id = msg.message_id
+        game.board_message_id = msg1.message_id
+        game.board_message_id2 = msg2.message_id
     except Exception:
-        logging.exception("發送群組棋盤失敗")
+        logging.exception("發送群組雙圖棋盤失敗")
     finally:
-        try:
-            board_img.close()
-        except Exception:
-            pass
+        for img in (top_img, bottom_img):
+            try:
+                img.close()
+            except Exception:
+                pass
 
 async def send_private_ui(game: Game, player: Player, context):
     """
