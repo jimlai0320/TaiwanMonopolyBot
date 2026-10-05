@@ -170,6 +170,7 @@ class Game:
     round_number: int = 1
     phase: str = "lobby"  # lobby / roll / buy / jail / debt / end
     board_message_id: Optional[int] = None
+    board_message_id_2: Optional[int] = None
     property_owner: dict[int, int] = field(default_factory=dict)
     property_level: dict[int, int] = field(default_factory=dict)
     pending_property: Optional[int] = None
@@ -326,18 +327,16 @@ def fit_text(draw, text, max_width, start_size=22, min_size=10, bold=False):
     return get_font(min_size, bold)
 
 
-def tile_coords(index: int):
-    """V6：48 格改成 8×6 蛇形路線。重點是讓 Telegram 預覽中的每格足夠大。"""
-    cols, rows = 8, 6
-    x_left, x_right = 18, 1182
-    y_top, y_bottom = 120, 1050
-    gap = 5
+def _half_tile_coords(local_index: int):
+    """每張圖顯示 24 格：4 欄 × 6 列蛇形，讓 Telegram 預覽中字體夠大。"""
+    cols, rows = 4, 6
+    x_left, x_right = 24, 1176
+    y_top, y_bottom = 118, 1112
+    gap = 10
     cell_w = (x_right - x_left - gap * (cols - 1)) / cols
     cell_h = (y_bottom - y_top - gap * (rows - 1)) / rows
-
-    r = index // cols
-    c0 = index % cols
-    # 蛇形：偶數列左→右，奇數列右→左
+    r = local_index // cols
+    c0 = local_index % cols
     c = c0 if r % 2 == 0 else (cols - 1 - c0)
     x0 = x_left + c * (cell_w + gap)
     y0 = y_top + r * (cell_h + gap)
@@ -356,8 +355,8 @@ def _draw_centered(draw, box, text, font, fill, y=None, stroke_width=0, stroke_f
 
 def _tile_symbol(kind):
     return {
-        "start": "GO", "chance": "?", "tax": "稅", "transport": "交通",
-        "jail": "監獄", "gotojail": "入獄", "free": "休息",
+        "start": "GO", "chance": "?", "tax": "稅金", "transport": "交通",
+        "jail": "監獄", "gotojail": "前往監獄", "free": "免費休息",
         "teleport": "傳送", "special": "獎金",
     }.get(kind, "")
 
@@ -370,31 +369,33 @@ def _plain_text(text: str) -> str:
     )
 
 
-def generate_board_image(game: Game) -> io.BytesIO:
-    """V6 Telegram 可讀版：48 格 8×6，大格子優先，不再硬塞中央地圖。"""
-    W, H = 1200, 1080
+def generate_board_half(game: Game, half: int) -> io.BytesIO:
+    """V7 雙圖版。half=0 顯示 1~24；half=1 顯示 25~48。"""
+    W, H = 1200, 1140
     img = Image.new("RGB", (W, H), (7, 20, 32))
     d = ImageDraw.Draw(img)
-    d.rounded_rectangle((8, 8, W-8, H-8), radius=26,
+    d.rounded_rectangle((8, 8, W-8, H-8), radius=28,
                         fill=(10,28,43), outline=(45,103,132), width=4)
 
-    # 頂部：只保留必要資訊，讓棋盤盡量佔空間
-    d.text((28, 20), "台灣大富翁", font=get_font(42, True), fill=(255,221,83),
+    start_idx = half * 24
+    end_idx = start_idx + 24
+    title = f"台灣大富翁｜地圖 {half+1}/2｜第 {start_idx+1}～{end_idx} 格"
+    d.text((28, 20), title, font=get_font(38, True), fill=(255,221,83),
            stroke_width=2, stroke_fill=(33,48,42))
     mode = "30回合" if game.mode == "quick" else "經典"
     d.text((32, 70), f"第 {game.round_number} 回合｜{mode}",
-           font=get_font(19, True), fill=(218,235,244))
+           font=get_font(21, True), fill=(218,235,244))
     if game.players:
         cur = game.players[game.current_index]
         cc = PLAYER_COLORS[game.current_index % len(PLAYER_COLORS)]
-        d.rounded_rectangle((690, 18, 1170, 92), radius=15,
+        d.rounded_rectangle((705, 18, 1170, 92), radius=15,
                             fill=(14,37,53), outline=cc, width=4)
-        d.ellipse((710, 34, 750, 74), fill=cc, outline=(245,245,245), width=2)
+        d.ellipse((724, 34, 764, 74), fill=cc, outline=(245,245,245), width=2)
         turn = "遊戲結束" if game.finished else f"目前輪到：{cur.name}"
-        d.text((768, 29), turn, font=fit_text(d, turn, 380, 28, 17, True), fill=(245,247,250))
+        d.text((780, 28), turn, font=fit_text(d, turn, 370, 28, 18, True), fill=(245,247,250))
         if not game.finished:
-            d.text((768, 62), f"${cur.money}｜{BOARD[cur.position]['name']}",
-                   font=get_font(16), fill=(164,198,214))
+            d.text((780, 61), f"${cur.money}｜{BOARD[cur.position]['name']}",
+                   font=get_font(17), fill=(164,198,214))
 
     type_colors = {
         "start": (255,220,112), "property": (241,246,224), "chance": (255,216,109),
@@ -403,9 +404,11 @@ def generate_board_image(game: Game) -> io.BytesIO:
         "special": (255,197,214),
     }
 
-    # 畫 48 格
-    for i, tile in enumerate(BOARD):
-        x0,y0,x1,y1 = tile_coords(i)
+    # 一張只畫 24 格，所以每格約 280×155；Telegram 不點開也能讀。
+    for local_i in range(24):
+        i = start_idx + local_i
+        tile = BOARD[i]
+        x0,y0,x1,y1 = _half_tile_coords(local_i)
         fill = type_colors.get(tile["kind"], (232,235,238))
         owner = get_owner(game, i)
         owner_color = None
@@ -414,66 +417,63 @@ def generate_board_image(game: Game) -> io.BytesIO:
             owner_color = PLAYER_COLORS[oi % len(PLAYER_COLORS)]
             fill = tuple(int(fill[k]*.82 + owner_color[k]*.18) for k in range(3))
 
-        d.rounded_rectangle((x0,y0,x1,y1), radius=10, fill=fill,
-                            outline=(20,43,56), width=3)
+        d.rounded_rectangle((x0,y0,x1,y1), radius=12, fill=fill,
+                            outline=(20,43,56), width=4)
         if owner_color:
-            d.rectangle((x0+3,y0+3,x1-3,y0+12), fill=owner_color)
+            d.rectangle((x0+4,y0+4,x1-4,y0+16), fill=owner_color)
 
-        # 格號，方便 48 格時找位置
-        d.text((x0+7, y0+6), str(i+1), font=get_font(12, True), fill=(75,90,96))
-
+        d.text((x0+10, y0+8), f"{i+1}", font=get_font(17, True), fill=(72,86,92))
         name = tile["name"]
-        name_font = fit_text(d, name, x1-x0-18, 23, 14, True)
-        _draw_centered(d, (x0+5,y0+22,x1-5,y0+62), name, name_font, (16,31,40))
+        name_font = fit_text(d, name, x1-x0-28, 34, 22, True)
+        _draw_centered(d, (x0+10,y0+28,x1-10,y0+82), name, name_font, (16,31,40))
 
         kind = tile["kind"]
         if kind == "property":
             price = f"${tile['price']}"
-            _draw_centered(d, (x0+6,y1-34,x1-6,y1-6), price,
-                           get_font(17, True), (17,50,58))
+            _draw_centered(d, (x0+10,y1-50,x1-10,y1-8), price,
+                           get_font(25, True), (17,50,58))
             level = game.property_level.get(i, 0)
             if level:
-                lv = "🏨" if level == 4 else "🏠" * min(level,3)
-                _draw_centered(d, (x0+5,y0+66,x1-5,y1-36), lv,
-                               fit_text(d, lv, x1-x0-18, 23, 15, True), (130,73,22))
+                lv = "飯店" if level == 4 else f"{level}級房"
+                d.text((x0+12, y1-78), lv, font=get_font(18, True), fill=(130,73,22))
         elif kind == "chance":
-            _draw_centered(d,(x0,y0+58,x1,y1-8),"?",get_font(44,True),(188,51,40))
+            _draw_centered(d,(x0,y0+70,x1,y1-8),"?",get_font(60,True),(188,51,40))
         elif kind == "tax":
             t=f"-${tile['amount']}"
-            _draw_centered(d,(x0,y0+60,x1,y1-10),t,get_font(19,True),(174,77,0))
+            _draw_centered(d,(x0,y0+75,x1,y1-10),t,get_font(29,True),(174,77,0))
         else:
             symbol = _tile_symbol(kind)
             if symbol:
-                _draw_centered(d,(x0+4,y0+61,x1-4,y1-8),symbol,
-                               fit_text(d,symbol,x1-x0-18,24,14,True),(28,70,88))
+                _draw_centered(d,(x0+10,y0+75,x1-10,y1-10),symbol,
+                               fit_text(d,symbol,x1-x0-28,30,20,True),(28,70,88))
 
-    # 玩家棋子：直接放在格子的右上/右下角，最多 8 人也不蓋住名稱
+    # 玩家棋子：只畫在本張地圖涵蓋的格子。
     occ = {}
     for idx,p in enumerate(game.players):
-        if not p.bankrupt:
+        if not p.bankrupt and start_idx <= p.position < end_idx:
             occ.setdefault(p.position,[]).append(idx)
     for pos, ids in occ.items():
-        x0,y0,x1,y1 = tile_coords(pos)
+        x0,y0,x1,y1 = _half_tile_coords(pos-start_idx)
         spots = [
-            (x1-19,y0+18),(x1-43,y0+18),(x1-19,y0+43),(x1-43,y0+43),
-            (x1-67,y0+18),(x1-67,y0+43),(x1-19,y0+68),(x1-43,y0+68)
+            (x1-24,y0+24),(x1-54,y0+24),(x1-84,y0+24),(x1-114,y0+24),
+            (x1-24,y0+54),(x1-54,y0+54),(x1-84,y0+54),(x1-114,y0+54),
         ]
         for n,pi in enumerate(ids[:8]):
             px,py = spots[n]
             c=PLAYER_COLORS[pi % len(PLAYER_COLORS)]
-            d.ellipse((px-8,py-8,px+8,py+8),fill=c,outline=(5,15,22),width=2)
-
-    # 路線提示箭頭（每列蛇形方向）
-    for r in range(6):
-        arrow = "→" if r % 2 == 0 else "←"
-        y = 120 + r * ((1050-120-5*5)/6 + 5) + 6
-        d.text((582, int(y)), arrow, font=get_font(15, True), fill=(70,99,116))
+            d.ellipse((px-11,py-11,px+11,py+11),fill=c,outline=(5,15,22),width=3)
 
     out = io.BytesIO()
     img.save(out, format="PNG", optimize=False, compress_level=6)
     img.close()
     out.seek(0)
     return out
+
+
+def generate_board_image(game: Game) -> io.BytesIO:
+    """私人介面沿用單張圖：顯示目前輪到玩家所在的半張地圖。"""
+    half = 0 if current_player(game).position < 24 else 1
+    return generate_board_half(game, half)
 
 def lobby_text(game: Game):
     mode = "⚡ 30回合快速模式" if game.mode == "quick" else "🏆 經典淘汰模式"
@@ -584,27 +584,58 @@ def private_keyboard(game: Game, player: Player):
 # UI send/update
 # ============================================================
 async def safe_edit_or_send_board(game: Game, context):
+    """群組固定維持兩張大圖：第1~24格 + 第25~48格。按鈕只放第二張。"""
     caption = board_caption(game)
     markup = board_keyboard(game, context.bot.username or "")
+
+    # 第一張：1~24 格，純地圖。
+    updated_1 = False
     if game.board_message_id:
         try:
             await context.bot.edit_message_media(
                 chat_id=game.chat_id, message_id=game.board_message_id,
-                media=InputMediaPhoto(media=generate_board_image(game), caption=caption, parse_mode="HTML"),
-                reply_markup=markup)
-            return
+                media=InputMediaPhoto(media=generate_board_half(game, 0), caption="🗺 <b>地圖 1/2｜第 1～24 格</b>", parse_mode="HTML"))
+            updated_1 = True
         except BadRequest as e:
             if "Message is not modified" in str(e):
-                return
+                updated_1 = True
         except RetryAfter as e:
             await asyncio.sleep(float(e.retry_after))
         except Exception:
-            logging.exception("更新群組棋盤失敗")
-    try:
-        msg = await context.bot.send_photo(game.chat_id, generate_board_image(game), caption=caption, reply_markup=markup, parse_mode="HTML")
-        game.board_message_id = msg.message_id
-    except Exception:
-        logging.exception("發送群組棋盤失敗")
+            logging.exception("更新群組上半張棋盤失敗")
+    if not updated_1:
+        try:
+            msg1 = await context.bot.send_photo(
+                game.chat_id, generate_board_half(game, 0),
+                caption="🗺 <b>地圖 1/2｜第 1～24 格</b>", parse_mode="HTML")
+            game.board_message_id = msg1.message_id
+        except Exception:
+            logging.exception("發送群組上半張棋盤失敗")
+
+    # 第二張：25~48 格 + 回合文字 + 操作按鈕。
+    updated_2 = False
+    if game.board_message_id_2:
+        try:
+            await context.bot.edit_message_media(
+                chat_id=game.chat_id, message_id=game.board_message_id_2,
+                media=InputMediaPhoto(media=generate_board_half(game, 1), caption=caption, parse_mode="HTML"),
+                reply_markup=markup)
+            updated_2 = True
+        except BadRequest as e:
+            if "Message is not modified" in str(e):
+                updated_2 = True
+        except RetryAfter as e:
+            await asyncio.sleep(float(e.retry_after))
+        except Exception:
+            logging.exception("更新群組下半張棋盤失敗")
+    if not updated_2:
+        try:
+            msg2 = await context.bot.send_photo(
+                game.chat_id, generate_board_half(game, 1),
+                caption=caption, reply_markup=markup, parse_mode="HTML")
+            game.board_message_id_2 = msg2.message_id
+        except Exception:
+            logging.exception("發送群組下半張棋盤失敗")
 
 
 async def send_private_ui(game: Game, player: Player, context):
@@ -1087,6 +1118,10 @@ async def start_game(game: Game, context):
         try: await context.bot.delete_message(game.chat_id,game.board_message_id)
         except Exception: pass
         game.board_message_id=None
+    if game.board_message_id_2:
+        try: await context.bot.delete_message(game.chat_id,game.board_message_id_2)
+        except Exception: pass
+        game.board_message_id_2=None
     await refresh_all_ui(game,context)
     p=current_player(game)
     if p.is_bot: asyncio.create_task(run_bot_turn(game,context))
