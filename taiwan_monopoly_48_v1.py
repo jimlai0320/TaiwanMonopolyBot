@@ -170,7 +170,6 @@ class Game:
     round_number: int = 1
     phase: str = "lobby"  # lobby / roll / buy / jail / debt / end
     board_message_id: Optional[int] = None
-    board_message_id_2: Optional[int] = None
     property_owner: dict[int, int] = field(default_factory=dict)
     property_level: dict[int, int] = field(default_factory=dict)
     pending_property: Optional[int] = None
@@ -327,20 +326,28 @@ def fit_text(draw, text, max_width, start_size=22, min_size=10, bold=False):
     return get_font(min_size, bold)
 
 
-def _half_tile_coords(local_index: int):
-    """每張圖顯示 24 格：4 欄 × 6 列蛇形，讓 Telegram 預覽中字體夠大。"""
-    cols, rows = 4, 6
-    x_left, x_right = 24, 1176
-    y_top, y_bottom = 118, 1112
-    gap = 10
-    cell_w = (x_right - x_left - gap * (cols - 1)) / cols
-    cell_h = (y_bottom - y_top - gap * (rows - 1)) / rows
-    r = local_index // cols
-    c0 = local_index % cols
-    c = c0 if r % 2 == 0 else (cols - 1 - c0)
-    x0 = x_left + c * (cell_w + gap)
-    y0 = y_top + r * (cell_h + gap)
-    return int(x0), int(y0), int(x0 + cell_w), int(y0 + cell_h)
+def tile_coords(index: int):
+    # 48 格：上 14 / 右 10 / 下 14 / 左 10
+    # 尺寸刻意放大，讓 Telegram 縮圖後仍看得清楚。
+    W, H, M = 1600, 1200, 22
+    top_n, side_n = 14, 10
+    top_h, side_w = 142, 148
+    inner_h = H - 2 * M - 2 * top_h
+    top_w = (W - 2 * M) / top_n
+    if index < 14:
+        x0 = M + index * top_w
+        return int(x0), M, int(x0 + top_w), M + top_h
+    if index < 24:
+        j = index - 14
+        y0 = M + top_h + j * (inner_h / side_n)
+        return W - M - side_w, int(y0), W - M, int(y0 + inner_h / side_n)
+    if index < 38:
+        j = index - 24
+        x1 = W - M - j * top_w
+        return int(x1 - top_w), H - M - top_h, int(x1), H - M
+    j = index - 38
+    y1 = H - M - top_h - j * (inner_h / side_n)
+    return M, int(y1 - inner_h / side_n), M + side_w, int(y1)
 
 
 def _draw_centered(draw, box, text, font, fill, y=None, stroke_width=0, stroke_fill=None):
@@ -355,125 +362,210 @@ def _draw_centered(draw, box, text, font, fill, y=None, stroke_width=0, stroke_f
 
 def _tile_symbol(kind):
     return {
-        "start": "GO", "chance": "?", "tax": "稅金", "transport": "交通",
-        "jail": "監獄", "gotojail": "前往監獄", "free": "免費休息",
-        "teleport": "傳送", "special": "獎金",
+        "start": "GO", "chance": "?", "tax": "$", "transport": "T",
+        "jail": "JAIL", "gotojail": "JAIL", "free": "REST",
+        "teleport": ">>", "special": "+$",
     }.get(kind, "")
 
 
-def _plain_text(text: str) -> str:
-    return html.unescape(
-        text.replace("<b>", "").replace("</b>", "")
-            .replace("<code>", "").replace("</code>", "")
-            .replace("<i>", "").replace("</i>", "")
-    )
-
-
-def generate_board_half(game: Game, half: int) -> io.BytesIO:
-    """V7 雙圖版。half=0 顯示 1~24；half=1 顯示 25~48。"""
-    W, H = 1200, 1140
-    img = Image.new("RGB", (W, H), (7, 20, 32))
+def generate_board_image(game: Game) -> io.BytesIO:
+    # V8：回到「環繞一圈」的精緻預覽風格。
+    # 注意：在 Telegram 聊天縮圖中，這種 48 格外圈版面會比雙圖版更精緻，
+    # 但可讀性仍會受聊天寬度限制；因此此版主打「像預覽圖」。
+    W, H = 1600, 1760
+    img = Image.new("RGB", (W, H), (7, 24, 41))
     d = ImageDraw.Draw(img)
-    d.rounded_rectangle((8, 8, W-8, H-8), radius=28,
-                        fill=(10,28,43), outline=(45,103,132), width=4)
 
-    start_idx = half * 24
-    end_idx = start_idx + 24
-    title = f"台灣大富翁｜地圖 {half+1}/2｜第 {start_idx+1}～{end_idx} 格"
-    d.text((28, 20), title, font=get_font(38, True), fill=(255,221,83),
-           stroke_width=2, stroke_fill=(33,48,42))
-    mode = "30回合" if game.mode == "quick" else "經典"
-    d.text((32, 70), f"第 {game.round_number} 回合｜{mode}",
-           font=get_font(21, True), fill=(218,235,244))
-    if game.players:
-        cur = game.players[game.current_index]
-        cc = PLAYER_COLORS[game.current_index % len(PLAYER_COLORS)]
-        d.rounded_rectangle((705, 18, 1170, 92), radius=15,
-                            fill=(14,37,53), outline=cc, width=4)
-        d.ellipse((724, 34, 764, 74), fill=cc, outline=(245,245,245), width=2)
-        turn = "遊戲結束" if game.finished else f"目前輪到：{cur.name}"
-        d.text((780, 28), turn, font=fit_text(d, turn, 370, 28, 18, True), fill=(245,247,250))
-        if not game.finished:
-            d.text((780, 61), f"${cur.money}｜{BOARD[cur.position]['name']}",
-                   font=get_font(17), fill=(164,198,214))
+    # ===== 背景 =====
+    d.rounded_rectangle((8, 8, W-8, H-8), radius=36, fill=(9, 29, 47), outline=(63, 111, 140), width=4)
+    d.rounded_rectangle((18, 18, W-18, H-18), radius=30, outline=(28, 70, 92), width=2)
+
+    # Header
+    d.rounded_rectangle((26, 26, 736, 136), radius=26, fill=(11, 44, 73), outline=(90, 150, 187), width=3)
+    d.ellipse((38, 40, 112, 114), fill=(245, 245, 248), outline=(15, 26, 35), width=2)
+    d.text((57, 56), "🎲", font=get_font(40, True), fill=(35, 35, 35))
+    title_f = get_font(70, True)
+    d.text((128, 36), "台灣大富翁", font=title_f, fill=(255, 210, 84), stroke_width=5, stroke_fill=(23, 34, 42))
+    mode = "快速模式" if game.mode == "quick" else "經典模式"
+    d.rounded_rectangle((128, 92, 430, 126), radius=14, fill=(17, 57, 98), outline=(103, 171, 221), width=2)
+    d.text((154, 96), f"第 {game.round_number} 回合｜{mode}", font=get_font(25, True), fill=(248, 249, 251))
+
+    cur = current_player(game)
+    cur_color = PLAYER_COLORS[game.current_index % len(PLAYER_COLORS)]
+    d.rounded_rectangle((770, 26, 1568, 136), radius=26, fill=(12, 39, 66), outline=(243, 203, 88), width=3)
+    d.ellipse((792, 43, 856, 107), fill=cur_color, outline=(245,245,245), width=3)
+    d.text((882, 42), f"目前輪到：{cur.name}", font=get_font(46, True), fill=(255, 228, 145))
+    d.text((882, 92), "擲骰子，展開你的台灣之旅吧！", font=get_font(24), fill=(210, 226, 234))
+
+    # ===== 棋盤座標（14/10/14/10） =====
+    board_left, board_top, board_right, board_bottom = 28, 160, W-28, 1238
+    top_n, side_n = 14, 10
+    top_h, side_w = 118, 120
+    inner_h = board_bottom - board_top - 2 * top_h
+    top_w = (board_right - board_left) / top_n
+
+    def coords(index: int):
+        if index < 14:
+            x0 = board_left + index * top_w
+            return int(x0), board_top, int(x0 + top_w), board_top + top_h
+        if index < 24:
+            j = index - 14
+            y0 = board_top + top_h + j * (inner_h / side_n)
+            return board_right - side_w, int(y0), board_right, int(y0 + inner_h / side_n)
+        if index < 38:
+            j = index - 24
+            x1 = board_right - j * top_w
+            return int(x1 - top_w), board_bottom - top_h, int(x1), board_bottom
+        j = index - 38
+        y1 = board_bottom - top_h - j * (inner_h / side_n)
+        return board_left, int(y1 - inner_h / side_n), board_left + side_w, int(y1)
 
     type_colors = {
-        "start": (255,220,112), "property": (241,246,224), "chance": (255,216,109),
-        "tax": (255,224,150), "transport": (187,224,244), "jail": (214,226,236),
-        "gotojail": (218,224,233), "free": (185,228,199), "teleport": (215,194,247),
-        "special": (255,197,214),
+        "start": (217, 245, 203), "property": (239, 246, 231), "chance": (255, 221, 118),
+        "tax": (255, 174, 128), "transport": (197, 227, 247), "jail": (203, 216, 237),
+        "gotojail": (206, 216, 232), "free": (187, 236, 196), "teleport": (217, 196, 250),
+        "special": (255, 201, 222),
     }
 
-    # 一張只畫 24 格，所以每格約 280×155；Telegram 不點開也能讀。
-    for local_i in range(24):
-        i = start_idx + local_i
-        tile = BOARD[i]
-        x0,y0,x1,y1 = _half_tile_coords(local_i)
-        fill = type_colors.get(tile["kind"], (232,235,238))
+    # ===== 中央主視覺區 =====
+    cx0, cy0, cx1, cy1 = board_left + side_w + 12, board_top + top_h + 12, board_right - side_w - 12, board_bottom - top_h - 12
+    d.rounded_rectangle((cx0, cy0, cx1, cy1), radius=28, fill=(11, 82, 138), outline=(74, 152, 196), width=3)
+    d.rounded_rectangle((cx0+12, cy0+12, cx1-12, cy1-12), radius=24, fill=(13, 92, 152))
+    # 海面與島嶼
+    d.ellipse((cx0+40, cy0+54, cx1-40, cy1-40), fill=(23, 116, 183))
+    island = [
+        (955, 392),(1030, 448),(1022, 530),(1082, 622),(1048, 742),(1010, 842),
+        (972, 958),(928, 1008),(868, 976),(816, 902),(780, 792),(762, 688),
+        (770, 570),(810, 482),(874, 420)
+    ]
+    d.polygon(island, fill=(109, 193, 94), outline=(36, 102, 61))
+    # 山脈
+    d.line([(880,450),(910,520),(890,600),(935,690),(905,785),(870,890)], fill=(60,125,68), width=10)
+    # 海島與裝飾
+    for ex,ey,rx,ry in [(585,550,32,18),(1240,520,28,14),(610,915,24,12),(1265,960,34,16),(570,820,18,10),(1210,825,22,12)]:
+        d.ellipse((ex-rx, ey-ry, ex+rx, ey+ry), fill=(235, 229, 175), outline=(77,108,122), width=2)
+    # 景點小塊
+    for px, py, c in [(920,440,(67,147,219)), (970,470,(216,93,68)), (948,548,(239,220,111)), (840,720,(239,220,111)), (994,640,(239,220,111)), (905,825,(239,220,111))]:
+        d.rounded_rectangle((px-10,py-10,px+10,py+10), radius=4, fill=c, outline=(33,64,78), width=1)
+    # 中央標題
+    d.rounded_rectangle((cx0+55, cy0+105, cx0+530, cy0+240), radius=28, fill=(14, 57, 104), outline=(255, 220, 110), width=3)
+    d.text((cx0+80, cy0+118), "台灣大富翁", font=get_font(68, True), fill=(255, 215, 86), stroke_width=4, stroke_fill=(32, 54, 73))
+    d.text((cx0+120, cy0+192), "環島之旅・買下全台・成為大富翁！", font=get_font(24, True), fill=(233, 241, 244))
+
+    # ===== 畫格子 =====
+    for i, tile in enumerate(BOARD):
+        x0, y0, x1, y1 = coords(i)
+        fill = type_colors.get(tile["kind"], (240, 242, 245))
         owner = get_owner(game, i)
         owner_color = None
         if owner:
-            oi = game.players.index(owner)
-            owner_color = PLAYER_COLORS[oi % len(PLAYER_COLORS)]
-            fill = tuple(int(fill[k]*.82 + owner_color[k]*.18) for k in range(3))
-
-        d.rounded_rectangle((x0,y0,x1,y1), radius=12, fill=fill,
-                            outline=(20,43,56), width=4)
+            owner_color = PLAYER_COLORS[game.players.index(owner) % len(PLAYER_COLORS)]
+            fill = tuple(int(fill[k] * 0.72 + owner_color[k] * 0.28) for k in range(3))
+        d.rounded_rectangle((x0+2, y0+2, x1-2, y1-2), radius=10, fill=fill, outline=(16, 41, 58), width=2)
+        # 小編號
+        d.rounded_rectangle((x0+5, y0+4, x0+34, y0+28), radius=8, fill=(25, 90, 57), outline=(245,245,245), width=1)
+        _draw_centered(d, (x0+5, y0+3, x0+34, y0+29), str(i+1), get_font(16, True), (255,255,255))
+        # 擁有者條
         if owner_color:
-            d.rectangle((x0+4,y0+4,x1-4,y0+16), fill=owner_color)
+            if i < 14 or 24 <= i < 38:
+                d.rectangle((x0 + 6, y0 + 30, x1 - 6, y0 + 38), fill=owner_color)
+            else:
+                d.rectangle((x0 + 6, y0 + 30, x0 + 14, y1 - 6), fill=owner_color)
+        # 名稱
+        nf = fit_text(d, tile['name'], x1 - x0 - 14, 24, 11, True)
+        _draw_centered(d, (x0+6, y0+36, x1-6, y0+68), tile['name'], nf, (13, 31, 40), y=y0+40)
+        # 中間圖樣/文字
+        kind = tile['kind']
+        if kind == 'property':
+            pf = fit_text(d, f"${tile['price']}", x1-x0-10, 18, 11, True)
+            # 景點占位圖
+            pic_box = (x0+10, y0+58, x1-10, y1-28)
+            d.rounded_rectangle(pic_box, radius=8, fill=(194, 226, 246), outline=(152, 189, 212), width=1)
+            # 簡單景物
+            d.polygon([(pic_box[0]+10,pic_box[3]-8),(pic_box[0]+(pic_box[2]-pic_box[0])*0.5,pic_box[1]+12),(pic_box[2]-10,pic_box[3]-8)], fill=(121,187,119))
+            d.rectangle((pic_box[0]+(pic_box[2]-pic_box[0])*0.42,pic_box[1]+18,pic_box[0]+(pic_box[2]-pic_box[0])*0.58,pic_box[3]-10), fill=(210,194,164))
+            d.text((x0+10, y1-23), f"${tile['price']}", font=pf, fill=(24, 42, 52))
+            lvl = game.property_level.get(i, 0)
+            if lvl:
+                lv = "🏨" if lvl == 4 else "★" * lvl
+                d.text((x1-40, y1-26), lv, font=get_font(18, True), fill=(186, 88, 16))
+        elif kind == 'chance':
+            _draw_centered(d, (x0, y0+54, x1, y1), '?', get_font(54, True), (196, 59, 41), y=y0+64)
+        elif kind == 'tax':
+            _draw_centered(d, (x0+4, y0+56, x1-4, y1-22), '稅金', get_font(20, True), (94, 54, 20), y=y0+60)
+            _draw_centered(d, (x0+4, y1-30, x1-4, y1-6), f"-${tile['amount']}", get_font(20, True), (166, 61, 25), y=y1-28)
+        elif kind == 'transport':
+            _draw_centered(d, (x0, y0+58, x1, y1-28), '交通', get_font(20, True), (33, 83, 109), y=y0+72)
+        elif kind == 'jail':
+            _draw_centered(d, (x0, y0+58, x1, y1-28), '監獄', get_font(28, True), (45, 54, 76), y=y0+76)
+        elif kind == 'gotojail':
+            _draw_centered(d, (x0, y0+56, x1, y1-8), '前往監獄', fit_text(d, '前往監獄', x1-x0-10, 22, 12, True), (45, 54, 76), y=y0+72)
+        elif kind == 'free':
+            _draw_centered(d, (x0, y0+58, x1, y1-8), '免費休息', fit_text(d, '免費休息', x1-x0-10, 22, 12, True), (36, 96, 59), y=y0+74)
+        elif kind == 'teleport':
+            _draw_centered(d, (x0, y0+58, x1, y1-8), '傳送', get_font(24, True), (75, 55, 122), y=y0+74)
+        elif kind == 'special':
+            _draw_centered(d, (x0, y0+58, x1, y1-8), f"+${tile['amount']}", get_font(26, True), (140, 73, 14), y=y0+74)
+        elif kind == 'start':
+            _draw_centered(d, (x0, y0+54, x1, y1-12), 'GO', get_font(44, True), (23, 121, 52), y=y0+66)
 
-        d.text((x0+10, y0+8), f"{i+1}", font=get_font(17, True), fill=(72,86,92))
-        name = tile["name"]
-        name_font = fit_text(d, name, x1-x0-28, 34, 22, True)
-        _draw_centered(d, (x0+10,y0+28,x1-10,y0+82), name, name_font, (16,31,40))
-
-        kind = tile["kind"]
-        if kind == "property":
-            price = f"${tile['price']}"
-            _draw_centered(d, (x0+10,y1-50,x1-10,y1-8), price,
-                           get_font(25, True), (17,50,58))
-            level = game.property_level.get(i, 0)
-            if level:
-                lv = "飯店" if level == 4 else f"{level}級房"
-                d.text((x0+12, y1-78), lv, font=get_font(18, True), fill=(130,73,22))
-        elif kind == "chance":
-            _draw_centered(d,(x0,y0+70,x1,y1-8),"?",get_font(60,True),(188,51,40))
-        elif kind == "tax":
-            t=f"-${tile['amount']}"
-            _draw_centered(d,(x0,y0+75,x1,y1-10),t,get_font(29,True),(174,77,0))
-        else:
-            symbol = _tile_symbol(kind)
-            if symbol:
-                _draw_centered(d,(x0+10,y0+75,x1-10,y1-10),symbol,
-                               fit_text(d,symbol,x1-x0-28,30,20,True),(28,70,88))
-
-    # 玩家棋子：只畫在本張地圖涵蓋的格子。
+    # ===== 棋子 =====
     occ = {}
-    for idx,p in enumerate(game.players):
-        if not p.bankrupt and start_idx <= p.position < end_idx:
-            occ.setdefault(p.position,[]).append(idx)
+    for idx, p in enumerate(game.players):
+        if not p.bankrupt:
+            occ.setdefault(p.position, []).append(idx)
     for pos, ids in occ.items():
-        x0,y0,x1,y1 = _half_tile_coords(pos-start_idx)
-        spots = [
-            (x1-24,y0+24),(x1-54,y0+24),(x1-84,y0+24),(x1-114,y0+24),
-            (x1-24,y0+54),(x1-54,y0+54),(x1-84,y0+54),(x1-114,y0+54),
-        ]
-        for n,pi in enumerate(ids[:8]):
-            px,py = spots[n]
-            c=PLAYER_COLORS[pi % len(PLAYER_COLORS)]
-            d.ellipse((px-11,py-11,px+11,py+11),fill=c,outline=(5,15,22),width=3)
+        x0, y0, x1, y1 = coords(pos)
+        for n, pi in enumerate(ids):
+            c = PLAYER_COLORS[pi % len(PLAYER_COLORS)]
+            px = x1 - 24 - (n % 2) * 24
+            py = y0 + 44 + (n // 2) * 30
+            d.ellipse((px-11, py-11, px+11, py+11), fill=c, outline=(255,255,255), width=2)
+            d.polygon([(px, py+8), (px-13, py+30), (px+13, py+30)], fill=c, outline=(18, 28, 34))
+
+    # ===== 底部玩家條 + 狀態資訊 =====
+    bar_y = 1260
+    slots = min(len(game.players), 8)
+    cols = 4
+    card_w = 370
+    card_h = 68
+    gap_x = 12
+    for idx, p in enumerate(game.players[:8]):
+        row = idx // cols
+        col = idx % cols
+        x = 30 + col * (card_w + gap_x)
+        y = bar_y + row * 80
+        c = PLAYER_COLORS[idx % len(PLAYER_COLORS)]
+        active = (idx == game.current_index and not game.finished)
+        outline = c if active else (64, 102, 125)
+        d.rounded_rectangle((x, y, x+card_w, y+card_h), radius=18, fill=(11, 36, 60), outline=outline, width=3)
+        d.ellipse((x+12, y+12, x+48, y+48), fill=c, outline=(245,245,245), width=2)
+        d.text((x+62, y+10), p.name[:10], font=get_font(24, True), fill=(246, 246, 248))
+        d.text((x+62, y+38), f"${p.money}", font=get_font(22, True), fill=(252, 215, 86))
+        d.text((x+210, y+38), f"📍 {BOARD[p.position]['name'][:6]}", font=get_font(18), fill=(205, 219, 228))
+        d.text((x+300, y+38), f"🏠 {len(p.properties)}", font=get_font(18), fill=(205, 219, 228))
+
+    info_y0 = 1438
+    d.rounded_rectangle((28, info_y0, W-28, H-110), radius=24, fill=(10, 34, 56), outline=(58, 107, 133), width=3)
+    d.text((52, info_y0+24), f"🎲  第 {game.round_number} 回合｜目前輪到：{cur.name}", font=get_font(28, True), fill=(245,245,247))
+    d.text((52, info_y0+70), f"💰  ${cur.money}  ｜  📍  {BOARD[cur.position]['name']}  ｜  🏠  {len(cur.properties)} 物業", font=get_font(24, True), fill=(244, 227, 151))
+    act = html.unescape(game.last_action_text.replace('<b>','').replace('</b>','').replace('<code>','').replace('</code>',''))
+    af = fit_text(d, act[:100], W-160, 27, 16, True)
+    d.text((52, info_y0+118), f"✨  {act[:100]}", font=af, fill=(235, 240, 244))
+    # 假按鈕區（實際按鈕仍由 Telegram 下方提供）
+    btn_y = H - 92
+    for bx, bw, txt, color in [(34, 480, '👉  前往操作', (26, 83, 136)), (560, 470, '📊  查看排名', (23, 72, 117)), (1070, 500, '🗺  查看地圖', (25, 80, 130))]:
+        d.rounded_rectangle((bx, btn_y, bx+bw, H-28), radius=22, fill=color, outline=(114, 164, 196), width=2)
+        _draw_centered(d, (bx, btn_y, bx+bw, H-28), txt, get_font(24, True), (255,255,255))
 
     out = io.BytesIO()
-    img.save(out, format="PNG", optimize=False, compress_level=6)
-    img.close()
+    img.save(out, format='PNG', optimize=True)
     out.seek(0)
+    try:
+        img.close()
+    except Exception:
+        pass
     return out
-
-
-def generate_board_image(game: Game) -> io.BytesIO:
-    """私人介面沿用單張圖：顯示目前輪到玩家所在的半張地圖。"""
-    half = 0 if current_player(game).position < 24 else 1
-    return generate_board_half(game, half)
 
 def lobby_text(game: Game):
     mode = "⚡ 30回合快速模式" if game.mode == "quick" else "🏆 經典淘汰模式"
@@ -584,58 +676,27 @@ def private_keyboard(game: Game, player: Player):
 # UI send/update
 # ============================================================
 async def safe_edit_or_send_board(game: Game, context):
-    """群組固定維持兩張大圖：第1~24格 + 第25~48格。按鈕只放第二張。"""
     caption = board_caption(game)
     markup = board_keyboard(game, context.bot.username or "")
-
-    # 第一張：1~24 格，純地圖。
-    updated_1 = False
     if game.board_message_id:
         try:
             await context.bot.edit_message_media(
                 chat_id=game.chat_id, message_id=game.board_message_id,
-                media=InputMediaPhoto(media=generate_board_half(game, 0), caption="🗺 <b>地圖 1/2｜第 1～24 格</b>", parse_mode="HTML"))
-            updated_1 = True
-        except BadRequest as e:
-            if "Message is not modified" in str(e):
-                updated_1 = True
-        except RetryAfter as e:
-            await asyncio.sleep(float(e.retry_after))
-        except Exception:
-            logging.exception("更新群組上半張棋盤失敗")
-    if not updated_1:
-        try:
-            msg1 = await context.bot.send_photo(
-                game.chat_id, generate_board_half(game, 0),
-                caption="🗺 <b>地圖 1/2｜第 1～24 格</b>", parse_mode="HTML")
-            game.board_message_id = msg1.message_id
-        except Exception:
-            logging.exception("發送群組上半張棋盤失敗")
-
-    # 第二張：25~48 格 + 回合文字 + 操作按鈕。
-    updated_2 = False
-    if game.board_message_id_2:
-        try:
-            await context.bot.edit_message_media(
-                chat_id=game.chat_id, message_id=game.board_message_id_2,
-                media=InputMediaPhoto(media=generate_board_half(game, 1), caption=caption, parse_mode="HTML"),
+                media=InputMediaPhoto(media=generate_board_image(game), caption=caption, parse_mode="HTML"),
                 reply_markup=markup)
-            updated_2 = True
+            return
         except BadRequest as e:
             if "Message is not modified" in str(e):
-                updated_2 = True
+                return
         except RetryAfter as e:
             await asyncio.sleep(float(e.retry_after))
         except Exception:
-            logging.exception("更新群組下半張棋盤失敗")
-    if not updated_2:
-        try:
-            msg2 = await context.bot.send_photo(
-                game.chat_id, generate_board_half(game, 1),
-                caption=caption, reply_markup=markup, parse_mode="HTML")
-            game.board_message_id_2 = msg2.message_id
-        except Exception:
-            logging.exception("發送群組下半張棋盤失敗")
+            logging.exception("更新群組棋盤失敗")
+    try:
+        msg = await context.bot.send_photo(game.chat_id, generate_board_image(game), caption=caption, reply_markup=markup, parse_mode="HTML")
+        game.board_message_id = msg.message_id
+    except Exception:
+        logging.exception("發送群組棋盤失敗")
 
 
 async def send_private_ui(game: Game, player: Player, context):
@@ -1118,10 +1179,6 @@ async def start_game(game: Game, context):
         try: await context.bot.delete_message(game.chat_id,game.board_message_id)
         except Exception: pass
         game.board_message_id=None
-    if game.board_message_id_2:
-        try: await context.bot.delete_message(game.chat_id,game.board_message_id_2)
-        except Exception: pass
-        game.board_message_id_2=None
     await refresh_all_ui(game,context)
     p=current_player(game)
     if p.is_bot: asyncio.create_task(run_bot_turn(game,context))
