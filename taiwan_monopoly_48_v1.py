@@ -1136,15 +1136,56 @@ async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type == "private":
         await update.message.reply_text("請在群組使用 /newgame。")
         return
+
     chat_id = update.effective_chat.id
     if chat_id in games and not games[chat_id].finished:
         await update.message.reply_text("⚠️ 已有一場遊戲，先 /cancel。")
         return
+
     u = update.effective_user
     p = Player(u.id, u.first_name or u.last_name or "玩家")
     game = Game(chat_id=chat_id, players=[p], host_user_id=u.id)
-    games[chat_id]=game; user_to_chat[u.id]=chat_id
-    msg = await update.message.reply_text(lobby_text(game), reply_markup=lobby_keyboard(), parse_mode="HTML")
+
+    # 先嘗試把大廳訊息真正送出去，成功後才把遊戲寫進 games。
+    # 這樣 Telegram 暫時逾時時，不會留下「看不到的大廳」卡住 /newgame。
+    msg = None
+    last_exc = None
+    for attempt in range(3):
+        try:
+            msg = await update.message.reply_text(
+                lobby_text(game),
+                reply_markup=lobby_keyboard(),
+                parse_mode="HTML",
+            )
+            break
+        except RetryAfter as exc:
+            last_exc = exc
+            await asyncio.sleep(float(exc.retry_after) + 0.5)
+        except (TimedOut, NetworkError) as exc:
+            last_exc = exc
+            await asyncio.sleep(1.0 + attempt)
+        except Exception as exc:
+            last_exc = exc
+            logging.exception("建立大富翁大廳失敗 chat_id=%s", chat_id)
+            break
+
+    if msg is None:
+        # 不留下幽靈遊戲；下次 /newgame 可以直接重試。
+        games.pop(chat_id, None)
+        user_to_chat.pop(u.id, None)
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="⚠️ 大廳建立失敗，Telegram 暫時沒有回應，請再輸入一次 /newgame。",
+            )
+        except Exception:
+            pass
+        if last_exc:
+            logging.error("/newgame 最終失敗：%r", last_exc)
+        return
+
+    games[chat_id] = game
+    user_to_chat[u.id] = chat_id
     game.board_message_id = msg.message_id
 
 
@@ -1308,6 +1349,10 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
 
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    logging.exception("Telegram update 發生未處理錯誤", exc_info=context.error)
+
+
 async def post_init(app: Application):
     await app.bot.set_my_commands([
         BotCommand("start","開啟遊戲"), BotCommand("newgame","建立大富翁房間"),
@@ -1327,6 +1372,7 @@ def main():
     app.add_handler(CommandHandler("status",status_command))
     app.add_handler(CommandHandler("cancel",cancel_command))
     app.add_handler(CallbackQueryHandler(callback_router, pattern=r"^mono_"))
+    app.add_error_handler(error_handler)
     logging.info("台灣大富翁 48格 Bot 啟動")
     app.run_polling(drop_pending_updates=True)
 
