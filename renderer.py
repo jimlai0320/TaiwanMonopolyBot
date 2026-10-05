@@ -254,3 +254,38 @@ def generate_board_image(game: Game) -> io.BytesIO:
     except Exception:
         pass
     return out
+
+
+def generate_group_board_images(game: Game):
+    """
+    產生 Telegram 群組專用的兩張近方形棋盤圖。
+
+    Telegram 對超長直式照片會依高度縮小，導致整張看起來很窄。
+    因此先渲染完整 1200x2200 環島棋盤，再裁成上下兩張近方形照片；
+    兩張之間保留少量重疊，讓玩家容易理解它們是同一張完整棋盤。
+    """
+    full_buf = generate_board_image(game)
+    full_buf.seek(0)
+    with Image.open(full_buf) as full:
+        full = full.convert("RGB")
+        w, h = full.size
+        overlap = 90
+        split = h // 2
+        top = full.crop((0, 0, w, min(h, split + overlap)))
+        bottom = full.crop((0, max(0, split - overlap), w, h))
+
+        top_buf = io.BytesIO()
+        bottom_buf = io.BytesIO()
+        top.save(top_buf, format="PNG", optimize=True)
+        bottom.save(bottom_buf, format="PNG", optimize=True)
+        top_buf.seek(0)
+        bottom_buf.seek(0)
+        try:
+            top.close(); bottom.close()
+        except Exception:
+            pass
+    try:
+        full_buf.close()
+    except Exception:
+        pass
+    return top_buf, bottom_buf

@@ -106,10 +106,12 @@ async def start_game(game: Game, context):
     for p in game.players:
         p.money=START_MONEY; p.position=0; p.properties.clear(); p.mortgaged.clear(); p.bankrupt=False; p.jail_attempts=0; p.ui_message_id=None
     game.last_action_text=f"🎮 遊戲開始！由 {current_player(game).safe_name} 先手。"
-    if game.board_message_id:
-        try: await context.bot.delete_message(game.chat_id,game.board_message_id)
-        except Exception: pass
-        game.board_message_id=None
+    for mid in (game.board_message_id, game.board_message_id2):
+        if mid:
+            try: await context.bot.delete_message(game.chat_id, mid)
+            except Exception: pass
+    game.board_message_id = None
+    game.board_message_id2 = None
     await refresh_all_ui(game,context)
     p=current_player(game)
     if p.is_bot: asyncio.create_task(run_bot_turn(game,context))

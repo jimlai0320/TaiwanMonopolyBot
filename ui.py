@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Telegram 群組 / 私訊 UI。"""
 import asyncio
+import html
 import inspect
 import logging
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
@@ -9,7 +10,7 @@ from config import MAX_PLAYERS, JAIL_FINE, MAX_LEVEL
 from board_data import BOARD
 from models import Game, Player
 from helpers import current_player, total_asset_value, upgrade_cost, mortgage_value
-from renderer import generate_board_image
+from renderer import generate_board_image, generate_group_board_images
 
 def button(text, callback_data=None, url=None, style=None):
     kwargs = {"text": text}
@@ -120,14 +121,25 @@ def private_keyboard(game: Game, player: Player):
     return InlineKeyboardMarkup(rows)
 
 async def safe_edit_or_send_board(game: Game, context):
+    """群組使用兩張近方形大圖，避免 Telegram 把超長圖縮得太小。"""
     caption = board_caption(game)
     markup = board_keyboard(game, context.bot.username or "")
-    if game.board_message_id:
+    top_img, bottom_img = generate_group_board_images(game)
+
+    # 已有兩張棋盤訊息：直接更新。
+    if game.board_message_id and game.board_message_id2:
         try:
             await context.bot.edit_message_media(
-                chat_id=game.chat_id, message_id=game.board_message_id,
-                media=InputMediaPhoto(media=generate_board_image(game), caption=caption, parse_mode="HTML"),
-                reply_markup=markup)
+                chat_id=game.chat_id,
+                message_id=game.board_message_id,
+                media=InputMediaPhoto(media=top_img, caption="🗺 <b>台灣大富翁｜地圖上半部</b>", parse_mode="HTML"),
+            )
+            await context.bot.edit_message_media(
+                chat_id=game.chat_id,
+                message_id=game.board_message_id2,
+                media=InputMediaPhoto(media=bottom_img, caption=caption, parse_mode="HTML"),
+                reply_markup=markup,
+            )
             return
         except BadRequest as e:
             if "Message is not modified" in str(e):
@@ -135,24 +147,62 @@ async def safe_edit_or_send_board(game: Game, context):
         except RetryAfter as e:
             await asyncio.sleep(float(e.retry_after))
         except Exception:
-            logging.exception("更新群組棋盤失敗")
+            logging.exception("更新群組雙圖棋盤失敗")
+
+    # 舊版若只留下一張訊息，先嘗試刪掉，避免殘留。
+    for mid in (game.board_message_id, game.board_message_id2):
+        if mid:
+            try:
+                await context.bot.delete_message(chat_id=game.chat_id, message_id=mid)
+            except Exception:
+                pass
+    game.board_message_id = None
+    game.board_message_id2 = None
+
     try:
-        msg = await context.bot.send_photo(game.chat_id, generate_board_image(game), caption=caption, reply_markup=markup, parse_mode="HTML")
-        game.board_message_id = msg.message_id
+        msg1 = await context.bot.send_photo(
+            chat_id=game.chat_id,
+            photo=top_img,
+            caption="🗺 <b>台灣大富翁｜地圖上半部</b>",
+            parse_mode="HTML",
+        )
+        msg2 = await context.bot.send_photo(
+            chat_id=game.chat_id,
+            photo=bottom_img,
+            caption=caption,
+            reply_markup=markup,
+            parse_mode="HTML",
+        )
+        game.board_message_id = msg1.message_id
+        game.board_message_id2 = msg2.message_id
     except Exception:
-        logging.exception("發送群組棋盤失敗")
+        logging.exception("發送群組雙圖棋盤失敗")
+    finally:
+        for b in (top_img, bottom_img):
+            try:
+                b.close()
+            except Exception:
+                pass
 
 async def send_private_ui(game: Game, player: Player, context):
+    """
+    私訊只保留文字 + 按鈕，不再重複傳 1200x2200 棋盤。
+    這樣群組棋盤能保持高畫質，同時大幅降低記憶體與上傳流量。
+    """
     if player.is_bot or not player.user_id:
         return
     caption = private_caption(game, player)
     markup = private_keyboard(game, player)
+
     if player.ui_message_id:
         try:
-            await context.bot.edit_message_media(
-                chat_id=player.user_id, message_id=player.ui_message_id,
-                media=InputMediaPhoto(media=generate_board_image(game), caption=caption, parse_mode="HTML"),
-                reply_markup=markup)
+            await context.bot.edit_message_text(
+                chat_id=player.user_id,
+                message_id=player.ui_message_id,
+                text=caption,
+                reply_markup=markup,
+                parse_mode="HTML",
+            )
             return
         except BadRequest as e:
             if "Message is not modified" in str(e):
@@ -161,8 +211,14 @@ async def send_private_ui(game: Game, player: Player, context):
             pass
         except Exception:
             logging.exception("編輯私人介面失敗 user=%s", player.user_id)
+
     try:
-        msg = await context.bot.send_photo(player.user_id, generate_board_image(game), caption=caption, reply_markup=markup, parse_mode="HTML")
+        msg = await context.bot.send_message(
+            chat_id=player.user_id,
+            text=caption,
+            reply_markup=markup,
+            parse_mode="HTML",
+        )
         player.ui_message_id = msg.message_id
     except Forbidden:
         logging.warning("無法私訊 %s：玩家尚未 /start 或封鎖 Bot", player.name)

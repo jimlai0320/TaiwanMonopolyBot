@@ -35,6 +35,7 @@ class Game:
     round_number: int = 1
     phase: str = "lobby"  # lobby / roll / buy / jail / debt / end
     board_message_id: Optional[int] = None
+    board_message_id2: Optional[int] = None
     property_owner: dict[int, int] = field(default_factory=dict)
     property_level: dict[int, int] = field(default_factory=dict)
     pending_property: Optional[int] = None
