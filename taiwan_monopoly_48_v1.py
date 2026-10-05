@@ -327,11 +327,11 @@ def fit_text(draw, text, max_width, start_size=22, min_size=10, bold=False):
 
 
 def tile_coords(index: int):
-    """48 格群組大圖座標：較接近方形，讓 Telegram 預覽能放大顯示。"""
-    x_left, x_right = 18, 1182
-    y_top, y_bottom = 118, 932
+    """V5：接近排7比例的群組棋盤座標，讓 Telegram 預覽盡量吃滿聊天寬度。"""
+    x_left, x_right = 14, 1186
+    y_top, y_bottom = 108, 985
     top_n, side_n = 14, 10
-    top_h, side_w = 98, 112
+    top_h, side_w = 108, 118
     inner_h = (y_bottom - y_top) - 2 * top_h
     top_w = (x_right - x_left) / top_n
 
@@ -377,52 +377,47 @@ def _plain_text(text: str) -> str:
 
 
 def _draw_taiwan_center(d: ImageDraw.ImageDraw):
-    """中央台灣主視覺：縮短高度，讓棋盤在 Telegram 聊天中更大。"""
-    d.rounded_rectangle((132, 228, 1068, 820), radius=30,
+    """V5：中央主視覺只佔棋盤內圈，不再拉高整張圖。"""
+    d.rounded_rectangle((132, 224, 1068, 872), radius=28,
                         fill=(73, 178, 218), outline=(111, 211, 235), width=3)
-    # 台灣島輪廓（風格化）
     island = [
-        (620,265),(665,310),(690,365),(688,430),(712,495),(696,560),
-        (668,625),(646,690),(605,778),(570,718),(535,650),(515,580),
-        (505,510),(520,445),(535,375),(565,320),(592,280)
+        (615,292),(650,326),(674,370),(684,423),(673,476),(661,530),
+        (641,583),(626,637),(603,692),(580,748),(557,801),(540,842),
+        (512,807),(493,756),(480,701),(468,645),(468,590),(479,534),
+        (490,480),(505,426),(525,377),(548,335),(576,305)
     ]
-    d.polygon(island, fill=(84,166,90), outline=(238,244,202))
+    d.polygon(island, fill=(82,162,88), outline=(34,85,72))
     d.line(island+[island[0]], fill=(36,105,76), width=5)
-    mountains=[(545,595),(585,470),(620,550),(653,410),(686,575)]
+    mountains=[(574,350),(620,405),(558,474),(620,538),(552,610),(604,682),(548,760)]
     d.line(mountains, fill=(38,119,76), width=24)
     d.line(mountains, fill=(120,190,111), width=9)
-    cities=[(620,340,"台北"),(555,460,"台中"),(550,610,"台南"),(580,680,"高雄"),(675,565,"花蓮")]
-    for x,y,name in cities:
+    for x,y in [(566,390),(628,462),(534,545),(600,610),(548,694),(590,760)]:
         d.ellipse((x-8,y-8,x+8,y+8), fill=(255,231,108), outline=(34,85,72), width=2)
-        d.text((x+12,y-12), name, font=get_font(18, True), fill=(19,58,70))
-    # 海上裝飾
-    for x,y,r in [(225,340,38),(930,340,42),(250,710,34),(900,700,42)]:
+    for x,y,r in [(220,300,25),(960,310,23),(234,730,20),(943,770,25)]:
         d.ellipse((x-r,y-r//2,x+r,y+r//2), fill=(223,238,191), outline=(36,113,115), width=2)
-    d.line([(270,510),(350,490),(430,505)], fill=(237,246,252), width=5)
-    d.polygon([(820,395),(860,380),(848,402)], fill=(250,250,248), outline=(29,89,112))
 
 def generate_board_image(game: Game) -> io.BytesIO:
-    """Telegram 大圖版 V4：縮短長寬比，讓棋盤像排7一樣佔滿聊天寬度。"""
-    W, H = 1200, 1450
+    """V5 Telegram 大字版：只把棋盤放進圖片，玩家明細留在 caption。"""
+    W, H = 1200, 1020
     img = Image.new("RGB", (W, H), (7, 20, 32))
     d = ImageDraw.Draw(img)
 
-    d.rounded_rectangle((8, 8, W-8, H-8), radius=28, fill=(10,28,43), outline=(45,103,132), width=4)
+    d.rounded_rectangle((8, 8, W-8, H-8), radius=26, fill=(10,28,43), outline=(45,103,132), width=4)
 
-    # ===== 頂部 =====
-    d.text((32, 18), "台灣大富翁", font=get_font(48, True), fill=(255,221,83),
+    # 頂部資訊列
+    d.text((28, 18), "台灣大富翁", font=get_font(42, True), fill=(255,221,83),
            stroke_width=2, stroke_fill=(33,48,42))
-    mode = "30回合快速模式" if game.mode == "quick" else "經典淘汰模式"
-    d.text((36, 76), f"第 {game.round_number} 回合｜{mode}", font=get_font(20, True), fill=(218,235,244))
+    mode = "30回合" if game.mode == "quick" else "經典"
+    d.text((32, 67), f"第 {game.round_number} 回合｜{mode}", font=get_font(18, True), fill=(218,235,244))
     if game.players:
         cur = game.players[game.current_index]
         cc = PLAYER_COLORS[game.current_index % len(PLAYER_COLORS)]
-        d.rounded_rectangle((730, 24, 1165, 100), radius=16, fill=(14,37,53), outline=cc, width=4)
-        d.ellipse((748, 42, 786, 80), fill=cc, outline=(245,245,245), width=2)
+        d.rounded_rectangle((690, 18, 1170, 88), radius=15, fill=(14,37,53), outline=cc, width=4)
+        d.ellipse((710, 34, 750, 74), fill=cc, outline=(245,245,245), width=2)
         turn = "遊戲結束" if game.finished else f"目前輪到：{cur.name}"
-        d.text((800, 36), turn, font=fit_text(d, turn, 340, 27, 17, True), fill=(245,247,250))
+        d.text((768, 29), turn, font=fit_text(d, turn, 380, 27, 16, True), fill=(245,247,250))
         if not game.finished:
-            d.text((800, 69), "請前往 Bot 私訊操作", font=get_font(15), fill=(164,198,214))
+            d.text((768, 60), f"${cur.money}｜{BOARD[cur.position]['name']}", font=get_font(15), fill=(164,198,214))
 
     type_colors = {
         "start": (255,220,112), "property": (241,246,224), "chance": (255,216,109),
@@ -431,7 +426,6 @@ def generate_board_image(game: Game) -> io.BytesIO:
         "special": (255,197,214),
     }
 
-    # ===== 48 格 =====
     for i, tile in enumerate(BOARD):
         x0,y0,x1,y1 = tile_coords(i)
         fill = type_colors.get(tile["kind"], (232,235,238))
@@ -443,37 +437,35 @@ def generate_board_image(game: Game) -> io.BytesIO:
             fill = tuple(int(fill[k]*.80 + owner_color[k]*.20) for k in range(3))
         d.rounded_rectangle((x0+2,y0+2,x1-2,y1-2), radius=6, fill=fill, outline=(20,43,56), width=2)
         if owner_color:
-            d.rectangle((x0+4,y0+4,x1-4,y0+9), fill=owner_color)
+            d.rectangle((x0+4,y0+4,x1-4,y0+10), fill=owner_color)
         name = tile["name"]
-        f = fit_text(d, name, max(38,x1-x0-6), 15, 8, True)
-        _draw_centered(d,(x0+2,y0+4,x1-2,y0+30),name,f,(17,34,42),y=y0+6)
+        f = fit_text(d, name, max(42,x1-x0-8), 17, 9, True)
+        _draw_centered(d,(x0+2,y0+5,x1-2,y0+34),name,f,(17,34,42),y=y0+7)
         kind=tile["kind"]
         if kind=="property":
             price=f"${tile['price']}"
-            pf=fit_text(d,price,max(36,x1-x0-6),13,8,True)
-            _draw_centered(d,(x0,y1-24,x1,y1-3),price,pf,(20,47,55),y=y1-23)
+            pf=fit_text(d,price,max(40,x1-x0-8),15,9,True)
+            _draw_centered(d,(x0,y1-26,x1,y1-3),price,pf,(20,47,55),y=y1-25)
             level=game.property_level.get(i,0)
             if level:
                 lv="飯店" if level==4 else "房"*level
-                _draw_centered(d,(x0,y0+31,x1,y1-25),lv,fit_text(d,lv,max(35,x1-x0-8),11,8,True),(139,76,20),y=y0+34)
+                _draw_centered(d,(x0,y0+36,x1,y1-28),lv,fit_text(d,lv,max(38,x1-x0-10),13,9,True),(139,76,20),y=y0+39)
         elif kind=="chance":
-            _draw_centered(d,(x0,y0+28,x1,y1),"?",get_font(29,True),(192,57,42),y=y0+35)
+            _draw_centered(d,(x0,y0+30,x1,y1),"?",get_font(34,True),(192,57,42),y=y0+39)
         elif kind=="tax":
             t=f"-${tile['amount']}"
-            _draw_centered(d,(x0,y0+28,x1,y1),t,fit_text(d,t,max(38,x1-x0-6),13,8,True),(174,77,0),y=y1-24)
+            _draw_centered(d,(x0,y0+30,x1,y1),t,fit_text(d,t,max(40,x1-x0-8),15,9,True),(174,77,0),y=y1-26)
         else:
             symbol=_tile_symbol(kind)
             if symbol:
-                _draw_centered(d,(x0,y0+28,x1,y1-4),symbol,fit_text(d,symbol,max(38,x1-x0-8),15,8,True),(28,70,88),y=y0+38)
+                _draw_centered(d,(x0,y0+30,x1,y1-4),symbol,fit_text(d,symbol,max(42,x1-x0-10),17,9,True),(28,70,88),y=y0+42)
 
-    # ===== 中央主視覺 =====
     _draw_taiwan_center(d)
-    _draw_centered(d,(250,330,950,430),"台灣大富翁",get_font(58,True),(255,222,80),
-                   y=338,stroke_width=4,stroke_fill=(38,55,40))
-    _draw_centered(d,(300,420,900,465),"環島之旅・買下全台・成為大富翁！",get_font(18,True),(244,249,250),
-                   y=428,stroke_width=2,stroke_fill=(26,76,92))
+    _draw_centered(d,(250,345,950,430),"台灣大富翁",get_font(58,True),(255,222,80),
+                   y=350,stroke_width=4,stroke_fill=(38,55,40))
+    _draw_centered(d,(300,432,900,475),"環島之旅・買下全台！",get_font(19,True),(244,249,250),
+                   y=438,stroke_width=2,stroke_fill=(26,76,92))
 
-    # ===== 棋子 =====
     occ={}
     for idx,p in enumerate(game.players):
         if not p.bankrupt:
@@ -482,35 +474,9 @@ def generate_board_image(game: Game) -> io.BytesIO:
         x0,y0,x1,y1=tile_coords(pos)
         for n,pi in enumerate(ids):
             c=PLAYER_COLORS[pi % len(PLAYER_COLORS)]
-            px=x0+16+(n%4)*20; py=y1-26-(n//4)*20
-            d.ellipse((px-7,py-7,px+7,py+7),fill=c,outline=(6,16,22),width=2)
-            d.polygon([(px,py+5),(px-9,py+20),(px+9,py+20)],fill=c,outline=(6,16,22))
-
-    # ===== 玩家資訊：2欄 x 4 =====
-    section_y=958
-    d.text((30,section_y),"玩家狀態",font=get_font(24,True),fill=(231,241,247))
-    card_w,card_h=555,78
-    gap_x,gap_y=18,8
-    for idx,p in enumerate(game.players[:8]):
-        col=idx%2; row=idx//2
-        x0=30+col*(card_w+gap_x); y0=section_y+40+row*(card_h+gap_y)
-        x1,y1=x0+card_w,y0+card_h
-        c=PLAYER_COLORS[idx%len(PLAYER_COLORS)]
-        active=idx==game.current_index and not game.finished
-        d.rounded_rectangle((x0,y0,x1,y1),radius=14,fill=(13,34,49),outline=c if active else (48,85,107),width=4 if active else 2)
-        d.ellipse((x0+14,y0+15,x0+52,y0+53),fill=c,outline=(245,245,245),width=2)
-        status="・破產" if p.bankrupt else "・監獄" if p.jail_attempts else ""
-        nm=f"{p.name}{status}"
-        d.text((x0+66,y0+8),nm,font=fit_text(d,nm,220,21,14,True),fill=(245,248,250))
-        d.text((x0+66,y0+39),f"${p.money}",font=get_font(20,True),fill=(255,213,66))
-        place=BOARD[p.position]["name"] if 0<=p.position<len(BOARD) else "--"
-        info=f"{place}｜地產 {len(p.properties)}"
-        d.text((x0+205,y0+41),info,font=fit_text(d,info,330,16,10),fill=(171,201,216))
-
-    # 最下方只放簡短提示；最近事件留給 Telegram caption，避免圖片過高。
-    d.rounded_rectangle((30,1378,1170,1425),radius=13,fill=(17,49,66),outline=(50,105,131),width=2)
-    hint="👇 詳細事件與操作按鈕請看圖片下方"
-    _draw_centered(d,(30,1378,1170,1425),hint,get_font(18,True),(205,230,241),y=1388)
+            px=x0+18+(n%4)*21; py=y1-29-(n//4)*21
+            d.ellipse((px-8,py-8,px+8,py+8),fill=c,outline=(6,16,22),width=2)
+            d.polygon([(px,py+5),(px-10,py+22),(px+10,py+22)],fill=c,outline=(6,16,22))
 
     out=io.BytesIO()
     img.save(out,format="PNG",optimize=False,compress_level=6)
