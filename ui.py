@@ -132,7 +132,7 @@ async def safe_edit_or_send_board(game: Game, context):
             await context.bot.edit_message_media(
                 chat_id=game.chat_id,
                 message_id=game.board_message_id,
-                media=InputMediaPhoto(media=top_img, caption="🗺 <b>台灣大富翁｜地圖上半部</b>", parse_mode="HTML"),
+                media=InputMediaPhoto(media=top_img, parse_mode="HTML"),
             )
             await context.bot.edit_message_media(
                 chat_id=game.chat_id,
@@ -163,7 +163,6 @@ async def safe_edit_or_send_board(game: Game, context):
         msg1 = await context.bot.send_photo(
             chat_id=game.chat_id,
             photo=top_img,
-            caption="🗺 <b>台灣大富翁｜地圖上半部</b>",
             parse_mode="HTML",
         )
         msg2 = await context.bot.send_photo(

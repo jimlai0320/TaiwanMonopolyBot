@@ -258,21 +258,40 @@ def generate_board_image(game: Game) -> io.BytesIO:
 
 def generate_group_board_images(game: Game):
     """
-    產生 Telegram 群組專用的兩張近方形棋盤圖。
+    產生 Telegram 群組專用的兩張連續棋盤圖。
 
-    Telegram 對超長直式照片會依高度縮小，導致整張看起來很窄。
-    因此先渲染完整 1200x2200 環島棋盤，再裁成上下兩張近方形照片；
-    兩張之間保留少量重疊，讓玩家容易理解它們是同一張完整棋盤。
+    不是簡單在正中間硬切，而是：
+    1. 先渲染完整 1200x2200 的長型環島棋盤
+    2. 依棋盤實際格線位置切成上下兩張
+    3. 在中央背景區保留少量重疊
+
+    這樣可以避免切線剛好切到格子，並讓上下看起來像同一張完整地圖。
     """
     full_buf = generate_board_image(game)
     full_buf.seek(0)
     with Image.open(full_buf) as full:
         full = full.convert("RGB")
         w, h = full.size
-        overlap = 90
-        split = h // 2
-        top = full.crop((0, 0, w, min(h, split + overlap)))
-        bottom = full.crop((0, max(0, split - overlap), w, h))
+
+        # 與 generate_board_image 的 V9 版面一致
+        board_top = 168
+        board_bottom = h - 26
+        top_h = 148
+        bottom_h = 148
+        inner_top = board_top + top_h
+        inner_bottom = board_bottom - bottom_h
+        side_n = 16
+        side_h = (inner_bottom - inner_top) / side_n
+
+        # 取中間分界：左右邊格子的第 8 / 9 列之間，屬於格線邊界，不會切到格子。
+        split_boundary = int(round(inner_top + side_h * 8))
+        overlap = 72  # 小幅重疊，讓上下更有連續感
+
+        top_end = min(h, split_boundary + overlap)
+        bottom_start = max(0, split_boundary - overlap)
+
+        top = full.crop((0, 0, w, top_end))
+        bottom = full.crop((0, bottom_start, w, h))
 
         top_buf = io.BytesIO()
         bottom_buf = io.BytesIO()
@@ -281,7 +300,8 @@ def generate_group_board_images(game: Game):
         top_buf.seek(0)
         bottom_buf.seek(0)
         try:
-            top.close(); bottom.close()
+            top.close()
+            bottom.close()
         except Exception:
             pass
     try:
