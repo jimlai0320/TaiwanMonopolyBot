@@ -369,196 +369,209 @@ def _tile_symbol(kind):
 
 
 def generate_board_image(game: Game) -> io.BytesIO:
-    # V8：回到「環繞一圈」的精緻預覽風格。
-    # 注意：在 Telegram 聊天縮圖中，這種 48 格外圈版面會比雙圖版更精緻，
-    # 但可讀性仍會受聊天寬度限制；因此此版主打「像預覽圖」。
-    W, H = 1600, 1760
-    img = Image.new("RGB", (W, H), (7, 24, 41))
+    # V9：直式長圖 + 外圈環島棋盤（8 / 16 / 8 / 16）
+    # 目標：保留「繞一圈」的視覺，同時把每格放大到更適合 Telegram 觀看。
+    W, H = 1200, 2200
+    img = Image.new("RGBA", (W, H), (9, 28, 45, 255))
     d = ImageDraw.Draw(img)
 
-    # ===== 背景 =====
-    d.rounded_rectangle((8, 8, W-8, H-8), radius=36, fill=(9, 29, 47), outline=(63, 111, 140), width=4)
-    d.rounded_rectangle((18, 18, W-18, H-18), radius=30, outline=(28, 70, 92), width=2)
+    # ==== 背景與外框 ====
+    d.rounded_rectangle((8, 8, W - 8, H - 8), radius=34, fill=(10, 31, 48), outline=(60, 111, 138), width=4)
+    d.rounded_rectangle((18, 18, W - 18, H - 18), radius=28, outline=(25, 70, 92), width=2)
 
-    # Header
-    d.rounded_rectangle((26, 26, 736, 136), radius=26, fill=(11, 44, 73), outline=(90, 150, 187), width=3)
-    d.ellipse((38, 40, 112, 114), fill=(245, 245, 248), outline=(15, 26, 35), width=2)
-    d.text((57, 56), "🎲", font=get_font(40, True), fill=(35, 35, 35))
-    title_f = get_font(70, True)
-    d.text((128, 36), "台灣大富翁", font=title_f, fill=(255, 210, 84), stroke_width=5, stroke_fill=(23, 34, 42))
+    # ==== 上方標題條 ====
+    d.rounded_rectangle((26, 24, W - 26, 144), radius=28, fill=(12, 46, 74), outline=(92, 151, 183), width=3)
+    d.ellipse((42, 40, 118, 116), fill=(245, 245, 249), outline=(13, 23, 30), width=2)
+    d.text((58, 56), "🎲", font=get_font(42, True), fill=(40, 40, 40))
+    d.text((132, 35), "台灣大富翁", font=get_font(66, True), fill=(255, 211, 86), stroke_width=5, stroke_fill=(25, 38, 47))
     mode = "快速模式" if game.mode == "quick" else "經典模式"
-    d.rounded_rectangle((128, 92, 430, 126), radius=14, fill=(17, 57, 98), outline=(103, 171, 221), width=2)
-    d.text((154, 96), f"第 {game.round_number} 回合｜{mode}", font=get_font(25, True), fill=(248, 249, 251))
+    d.rounded_rectangle((412, 42, 690, 96), radius=18, fill=(17, 61, 103), outline=(105, 171, 214), width=2)
+    _draw_centered(d, (412, 42, 690, 96), f"第 {game.round_number} 回合｜{mode}", get_font(23, True), (246, 247, 249))
 
     cur = current_player(game)
     cur_color = PLAYER_COLORS[game.current_index % len(PLAYER_COLORS)]
-    d.rounded_rectangle((770, 26, 1568, 136), radius=26, fill=(12, 39, 66), outline=(243, 203, 88), width=3)
-    d.ellipse((792, 43, 856, 107), fill=cur_color, outline=(245,245,245), width=3)
-    d.text((882, 42), f"目前輪到：{cur.name}", font=get_font(46, True), fill=(255, 228, 145))
-    d.text((882, 92), "擲骰子，展開你的台灣之旅吧！", font=get_font(24), fill=(210, 226, 234))
+    d.rounded_rectangle((726, 34, W - 42, 116), radius=22, fill=(11, 38, 64), outline=(245, 205, 92), width=3)
+    d.ellipse((744, 48, 796, 100), fill=cur_color, outline=(248, 248, 248), width=3)
+    d.text((818, 43), f"目前輪到：{cur.name}", font=get_font(42, True), fill=(255, 227, 133))
+    d.text((818, 82), "擲骰子，展開你的台灣之旅吧！", font=get_font(20), fill=(210, 226, 236))
 
-    # ===== 棋盤座標（14/10/14/10） =====
-    board_left, board_top, board_right, board_bottom = 28, 160, W-28, 1238
-    top_n, side_n = 14, 10
-    top_h, side_w = 118, 120
-    inner_h = board_bottom - board_top - 2 * top_h
-    top_w = (board_right - board_left) / top_n
+    # ==== 棋盤區域：8 / 16 / 8 / 16 ====
+    board_left, board_top = 26, 168
+    board_right, board_bottom = W - 26, H - 26
+    top_n, side_n = 8, 16
+    tile_w = int((board_right - board_left) / top_n)   # 約 143
+    side_w = tile_w
+    top_h = 148
+    bottom_h = 148
+    inner_left = board_left + side_w
+    inner_right = board_right - side_w
+    inner_top = board_top + top_h
+    inner_bottom = board_bottom - bottom_h
+    side_h = (inner_bottom - inner_top) / side_n
 
-    def coords(index: int):
-        if index < 14:
-            x0 = board_left + index * top_w
-            return int(x0), board_top, int(x0 + top_w), board_top + top_h
+    def tile_coords(index: int):
+        # 0-7 上，8-23 右，24-31 下（由右往左），32-47 左（由下往上）
+        if index < 8:
+            x0 = board_left + index * tile_w
+            return int(x0), board_top, int(x0 + tile_w), board_top + top_h
         if index < 24:
-            j = index - 14
-            y0 = board_top + top_h + j * (inner_h / side_n)
-            return board_right - side_w, int(y0), board_right, int(y0 + inner_h / side_n)
-        if index < 38:
+            j = index - 8
+            y0 = inner_top + j * side_h
+            return board_right - side_w, int(y0), board_right, int(y0 + side_h)
+        if index < 32:
             j = index - 24
-            x1 = board_right - j * top_w
-            return int(x1 - top_w), board_bottom - top_h, int(x1), board_bottom
-        j = index - 38
-        y1 = board_bottom - top_h - j * (inner_h / side_n)
-        return board_left, int(y1 - inner_h / side_n), board_left + side_w, int(y1)
+            x1 = board_right - j * tile_w
+            return int(x1 - tile_w), board_bottom - bottom_h, int(x1), board_bottom
+        j = index - 32
+        y1 = board_bottom - bottom_h - j * side_h
+        return board_left, int(y1 - side_h), board_left + side_w, int(y1)
 
+    # ==== 中央背景：優先使用預先生成的漂亮台灣圖 ====
+    cx0, cy0, cx1, cy1 = inner_left + 12, inner_top + 12, inner_right - 12, inner_bottom - 12
+    d.rounded_rectangle((cx0, cy0, cx1, cy1), radius=30, fill=(18, 97, 153), outline=(80, 152, 194), width=3)
+
+    bg_candidates = [
+        '/mnt/data/台灣大富翁遊戲棋盤.png',
+        '/mnt/data/台灣大富翁環島遊戲介面.png',
+        '/mnt/data/fmid.png',
+        '/mnt/data/f0.png',
+    ]
+    bg_loaded = False
+    for bg_path in bg_candidates:
+        try:
+            bg = Image.open(bg_path).convert('RGBA')
+            bw, bh = bg.size
+            # 優先裁出中央的台灣主視覺區域
+            if '遊戲棋盤' in bg_path:
+                crop = bg.crop((120, 250, bw - 110, 1000))
+            elif '環島遊戲介面' in bg_path:
+                crop = bg.crop((90, 210, bw - 90, 980))
+            else:
+                crop = bg
+            crop = crop.resize((cx1 - cx0 - 24, cy1 - cy0 - 24))
+            # 柔化邊緣底板
+            panel = Image.new('RGBA', img.size, (0, 0, 0, 0))
+            panel_draw = ImageDraw.Draw(panel)
+            panel_draw.rounded_rectangle((cx0 + 12, cy0 + 12, cx1 - 12, cy1 - 12), radius=24, fill=(255, 255, 255, 255))
+            panel.paste(crop, (cx0 + 12, cy0 + 12), crop)
+            img.alpha_composite(panel)
+            bg.close()
+            bg_loaded = True
+            break
+        except Exception:
+            pass
+
+    if not bg_loaded:
+        # Fallback：純 Pillow 繪製簡化海面 + 台灣島
+        d.rounded_rectangle((cx0 + 12, cy0 + 12, cx1 - 12, cy1 - 12), radius=24, fill=(80, 176, 216))
+        island = [
+            (718, 478), (764, 548), (754, 650), (799, 760), (777, 902), (742, 1056),
+            (700, 1176), (654, 1264), (607, 1226), (571, 1113), (545, 978), (533, 830),
+            (540, 687), (565, 568), (612, 488)
+        ]
+        d.polygon(island, fill=(98, 184, 94), outline=(39, 102, 60))
+        d.line([(652, 520), (678, 622), (660, 736), (696, 860), (666, 980), (638, 1112)], fill=(59, 124, 67), width=10)
+        for ex, ey, rx, ry in [(402, 632, 28, 14), (920, 584, 34, 16), (386, 1020, 20, 10), (945, 1154, 30, 14)]:
+            d.ellipse((ex-rx, ey-ry, ex+rx, ey+ry), fill=(236, 229, 175), outline=(84, 112, 124), width=2)
+
+    # 中央標題卡
+    d.rounded_rectangle((cx0 + 44, cy0 + 84, cx0 + 465, cy0 + 208), radius=24, fill=(13, 57, 101), outline=(255, 220, 108), width=3)
+    d.text((cx0 + 68, cy0 + 96), "台灣大富翁", font=get_font(58, True), fill=(255, 214, 88), stroke_width=4, stroke_fill=(28, 49, 67))
+    d.text((cx0 + 106, cy0 + 168), "環島之旅・買下全台・成為大富翁！", font=get_font(22, True), fill=(239, 243, 246))
+
+    # ==== 格子顏色 ====
     type_colors = {
-        "start": (217, 245, 203), "property": (239, 246, 231), "chance": (255, 221, 118),
-        "tax": (255, 174, 128), "transport": (197, 227, 247), "jail": (203, 216, 237),
-        "gotojail": (206, 216, 232), "free": (187, 236, 196), "teleport": (217, 196, 250),
-        "special": (255, 201, 222),
+        'start': (218, 245, 205), 'property': (241, 246, 230), 'chance': (255, 222, 122),
+        'tax': (255, 182, 136), 'transport': (198, 228, 247), 'jail': (205, 217, 236),
+        'gotojail': (208, 217, 232), 'free': (189, 235, 197), 'teleport': (220, 199, 248),
+        'special': (255, 201, 221),
     }
 
-    # ===== 中央主視覺區 =====
-    cx0, cy0, cx1, cy1 = board_left + side_w + 12, board_top + top_h + 12, board_right - side_w - 12, board_bottom - top_h - 12
-    d.rounded_rectangle((cx0, cy0, cx1, cy1), radius=28, fill=(11, 82, 138), outline=(74, 152, 196), width=3)
-    d.rounded_rectangle((cx0+12, cy0+12, cx1-12, cy1-12), radius=24, fill=(13, 92, 152))
-    # 海面與島嶼
-    d.ellipse((cx0+40, cy0+54, cx1-40, cy1-40), fill=(23, 116, 183))
-    island = [
-        (955, 392),(1030, 448),(1022, 530),(1082, 622),(1048, 742),(1010, 842),
-        (972, 958),(928, 1008),(868, 976),(816, 902),(780, 792),(762, 688),
-        (770, 570),(810, 482),(874, 420)
-    ]
-    d.polygon(island, fill=(109, 193, 94), outline=(36, 102, 61))
-    # 山脈
-    d.line([(880,450),(910,520),(890,600),(935,690),(905,785),(870,890)], fill=(60,125,68), width=10)
-    # 海島與裝飾
-    for ex,ey,rx,ry in [(585,550,32,18),(1240,520,28,14),(610,915,24,12),(1265,960,34,16),(570,820,18,10),(1210,825,22,12)]:
-        d.ellipse((ex-rx, ey-ry, ex+rx, ey+ry), fill=(235, 229, 175), outline=(77,108,122), width=2)
-    # 景點小塊
-    for px, py, c in [(920,440,(67,147,219)), (970,470,(216,93,68)), (948,548,(239,220,111)), (840,720,(239,220,111)), (994,640,(239,220,111)), (905,825,(239,220,111))]:
-        d.rounded_rectangle((px-10,py-10,px+10,py+10), radius=4, fill=c, outline=(33,64,78), width=1)
-    # 中央標題
-    d.rounded_rectangle((cx0+55, cy0+105, cx0+530, cy0+240), radius=28, fill=(14, 57, 104), outline=(255, 220, 110), width=3)
-    d.text((cx0+80, cy0+118), "台灣大富翁", font=get_font(68, True), fill=(255, 215, 86), stroke_width=4, stroke_fill=(32, 54, 73))
-    d.text((cx0+120, cy0+192), "環島之旅・買下全台・成為大富翁！", font=get_font(24, True), fill=(233, 241, 244))
+    def center_text(box, text, size, fill, yoff=0, bold=True):
+        font = get_font(size, bold)
+        _draw_centered(d, box, text, font, fill, y=box[1] + yoff)
 
-    # ===== 畫格子 =====
+    # ==== 繪製 48 格 ====
     for i, tile in enumerate(BOARD):
-        x0, y0, x1, y1 = coords(i)
-        fill = type_colors.get(tile["kind"], (240, 242, 245))
+        x0, y0, x1, y1 = tile_coords(i)
+        kind = tile['kind']
+        fill = type_colors.get(kind, (240, 242, 244))
         owner = get_owner(game, i)
         owner_color = None
         if owner:
             owner_color = PLAYER_COLORS[game.players.index(owner) % len(PLAYER_COLORS)]
-            fill = tuple(int(fill[k] * 0.72 + owner_color[k] * 0.28) for k in range(3))
-        d.rounded_rectangle((x0+2, y0+2, x1-2, y1-2), radius=10, fill=fill, outline=(16, 41, 58), width=2)
-        # 小編號
-        d.rounded_rectangle((x0+5, y0+4, x0+34, y0+28), radius=8, fill=(25, 90, 57), outline=(245,245,245), width=1)
-        _draw_centered(d, (x0+5, y0+3, x0+34, y0+29), str(i+1), get_font(16, True), (255,255,255))
-        # 擁有者條
+            fill = tuple(int(fill[k] * 0.73 + owner_color[k] * 0.27) for k in range(3))
+
+        d.rounded_rectangle((x0 + 2, y0 + 2, x1 - 2, y1 - 2), radius=10, fill=fill, outline=(17, 43, 58), width=2)
+        # 小編號角標
+        d.rounded_rectangle((x0 + 4, y0 + 4, x0 + 32, y0 + 28), radius=8, fill=(23, 92, 58), outline=(247, 247, 247), width=1)
+        _draw_centered(d, (x0 + 4, y0 + 3, x0 + 32, y0 + 28), str(i + 1), get_font(15, True), (255, 255, 255))
+
+        # 擁有者色條
         if owner_color:
-            if i < 14 or 24 <= i < 38:
+            if i < 8 or 24 <= i < 32:
                 d.rectangle((x0 + 6, y0 + 30, x1 - 6, y0 + 38), fill=owner_color)
             else:
                 d.rectangle((x0 + 6, y0 + 30, x0 + 14, y1 - 6), fill=owner_color)
+
         # 名稱
-        nf = fit_text(d, tile['name'], x1 - x0 - 14, 24, 11, True)
-        _draw_centered(d, (x0+6, y0+36, x1-6, y0+68), tile['name'], nf, (13, 31, 40), y=y0+40)
-        # 中間圖樣/文字
-        kind = tile['kind']
+        name_font = fit_text(d, tile['name'], x1 - x0 - 10, 22 if (i < 8 or 24 <= i < 32) else 20, 10, True)
+        _draw_centered(d, (x0 + 6, y0 + 34, x1 - 6, y0 + 68), tile['name'], name_font, (14, 31, 39), y=y0 + 38)
+
+        # 中段內容
         if kind == 'property':
-            pf = fit_text(d, f"${tile['price']}", x1-x0-10, 18, 11, True)
-            # 景點占位圖
-            pic_box = (x0+10, y0+58, x1-10, y1-28)
-            d.rounded_rectangle(pic_box, radius=8, fill=(194, 226, 246), outline=(152, 189, 212), width=1)
-            # 簡單景物
-            d.polygon([(pic_box[0]+10,pic_box[3]-8),(pic_box[0]+(pic_box[2]-pic_box[0])*0.5,pic_box[1]+12),(pic_box[2]-10,pic_box[3]-8)], fill=(121,187,119))
-            d.rectangle((pic_box[0]+(pic_box[2]-pic_box[0])*0.42,pic_box[1]+18,pic_box[0]+(pic_box[2]-pic_box[0])*0.58,pic_box[3]-10), fill=(210,194,164))
-            d.text((x0+10, y1-23), f"${tile['price']}", font=pf, fill=(24, 42, 52))
+            pic_box = (x0 + 8, y0 + 62, x1 - 8, y1 - 26)
+            d.rounded_rectangle(pic_box, radius=8, fill=(193, 225, 246), outline=(155, 191, 214), width=1)
+            # 超簡景點插圖感
+            d.polygon([(pic_box[0] + 8, pic_box[3] - 8), ((pic_box[0] + pic_box[2]) // 2), pic_box[1] + 8, (pic_box[2] - 8, pic_box[3] - 8)], fill=(132, 193, 121))
+            d.rectangle((pic_box[0] + (pic_box[2]-pic_box[0])*0.43, pic_box[1] + 14, pic_box[0] + (pic_box[2]-pic_box[0])*0.57, pic_box[3] - 8), fill=(219, 198, 167))
+            price = f"${tile['price']}"
+            d.text((x0 + 10, y1 - 22), price, font=fit_text(d, price, x1 - x0 - 10, 18, 10, True), fill=(26, 43, 53))
             lvl = game.property_level.get(i, 0)
             if lvl:
-                lv = "🏨" if lvl == 4 else "★" * lvl
-                d.text((x1-40, y1-26), lv, font=get_font(18, True), fill=(186, 88, 16))
+                lv = '🏨' if lvl == 4 else '★' * lvl
+                d.text((x1 - 38, y1 - 24), lv, font=get_font(16, True), fill=(183, 88, 18))
         elif kind == 'chance':
-            _draw_centered(d, (x0, y0+54, x1, y1), '?', get_font(54, True), (196, 59, 41), y=y0+64)
+            _draw_centered(d, (x0, y0 + 54, x1, y1 - 8), '?', get_font(50, True), (195, 59, 42), y=y0 + 62)
         elif kind == 'tax':
-            _draw_centered(d, (x0+4, y0+56, x1-4, y1-22), '稅金', get_font(20, True), (94, 54, 20), y=y0+60)
-            _draw_centered(d, (x0+4, y1-30, x1-4, y1-6), f"-${tile['amount']}", get_font(20, True), (166, 61, 25), y=y1-28)
+            center_text((x0, y0 + 58, x1, y1 - 40), '稅金', 18, (93, 56, 22), 0)
+            amt = f"-${tile['amount']}"
+            _draw_centered(d, (x0, y1 - 28, x1, y1 - 4), amt, get_font(19, True), (167, 61, 26), y=y1 - 24)
         elif kind == 'transport':
-            _draw_centered(d, (x0, y0+58, x1, y1-28), '交通', get_font(20, True), (33, 83, 109), y=y0+72)
+            center_text((x0, y0 + 56, x1, y1 - 12), '交通', 19, (36, 86, 110), 8)
         elif kind == 'jail':
-            _draw_centered(d, (x0, y0+58, x1, y1-28), '監獄', get_font(28, True), (45, 54, 76), y=y0+76)
+            center_text((x0, y0 + 56, x1, y1 - 12), '監獄', 24, (42, 54, 76), 8)
         elif kind == 'gotojail':
-            _draw_centered(d, (x0, y0+56, x1, y1-8), '前往監獄', fit_text(d, '前往監獄', x1-x0-10, 22, 12, True), (45, 54, 76), y=y0+72)
+            f = fit_text(d, '前往監獄', x1 - x0 - 10, 20, 11, True)
+            _draw_centered(d, (x0 + 4, y0 + 56, x1 - 4, y1 - 10), '前往監獄', f, (42, 54, 76), y=y0 + 70)
         elif kind == 'free':
-            _draw_centered(d, (x0, y0+58, x1, y1-8), '免費休息', fit_text(d, '免費休息', x1-x0-10, 22, 12, True), (36, 96, 59), y=y0+74)
+            f = fit_text(d, '免費休息', x1 - x0 - 10, 20, 11, True)
+            _draw_centered(d, (x0 + 4, y0 + 56, x1 - 4, y1 - 10), '免費休息', f, (40, 98, 58), y=y0 + 70)
         elif kind == 'teleport':
-            _draw_centered(d, (x0, y0+58, x1, y1-8), '傳送', get_font(24, True), (75, 55, 122), y=y0+74)
+            center_text((x0, y0 + 56, x1, y1 - 12), '傳送', 22, (78, 53, 121), 8)
         elif kind == 'special':
-            _draw_centered(d, (x0, y0+58, x1, y1-8), f"+${tile['amount']}", get_font(26, True), (140, 73, 14), y=y0+74)
+            amt = f"+${tile['amount']}"
+            center_text((x0, y0 + 56, x1, y1 - 12), amt, 24, (145, 75, 16), 8)
         elif kind == 'start':
-            _draw_centered(d, (x0, y0+54, x1, y1-12), 'GO', get_font(44, True), (23, 121, 52), y=y0+66)
+            center_text((x0, y0 + 52, x1, y1 - 12), 'GO', 40, (23, 124, 53), 8)
 
-    # ===== 棋子 =====
+    # ==== 棋子（支援同格多人）====
     occ = {}
     for idx, p in enumerate(game.players):
         if not p.bankrupt:
             occ.setdefault(p.position, []).append(idx)
     for pos, ids in occ.items():
-        x0, y0, x1, y1 = coords(pos)
+        x0, y0, x1, y1 = tile_coords(pos)
         for n, pi in enumerate(ids):
             c = PLAYER_COLORS[pi % len(PLAYER_COLORS)]
-            px = x1 - 24 - (n % 2) * 24
-            py = y0 + 44 + (n // 2) * 30
-            d.ellipse((px-11, py-11, px+11, py+11), fill=c, outline=(255,255,255), width=2)
-            d.polygon([(px, py+8), (px-13, py+30), (px+13, py+30)], fill=c, outline=(18, 28, 34))
+            px = x1 - 24 - (n % 2) * 26
+            py = y0 + 48 + (n // 2) * 30
+            d.ellipse((px - 10, py - 10, px + 10, py + 10), fill=c, outline=(248, 248, 248), width=2)
+            d.polygon([(px, py + 8), (px - 12, py + 28), (px + 12, py + 28)], fill=c, outline=(16, 25, 31))
 
-    # ===== 底部玩家條 + 狀態資訊 =====
-    bar_y = 1260
-    slots = min(len(game.players), 8)
-    cols = 4
-    card_w = 370
-    card_h = 68
-    gap_x = 12
-    for idx, p in enumerate(game.players[:8]):
-        row = idx // cols
-        col = idx % cols
-        x = 30 + col * (card_w + gap_x)
-        y = bar_y + row * 80
-        c = PLAYER_COLORS[idx % len(PLAYER_COLORS)]
-        active = (idx == game.current_index and not game.finished)
-        outline = c if active else (64, 102, 125)
-        d.rounded_rectangle((x, y, x+card_w, y+card_h), radius=18, fill=(11, 36, 60), outline=outline, width=3)
-        d.ellipse((x+12, y+12, x+48, y+48), fill=c, outline=(245,245,245), width=2)
-        d.text((x+62, y+10), p.name[:10], font=get_font(24, True), fill=(246, 246, 248))
-        d.text((x+62, y+38), f"${p.money}", font=get_font(22, True), fill=(252, 215, 86))
-        d.text((x+210, y+38), f"📍 {BOARD[p.position]['name'][:6]}", font=get_font(18), fill=(205, 219, 228))
-        d.text((x+300, y+38), f"🏠 {len(p.properties)}", font=get_font(18), fill=(205, 219, 228))
-
-    info_y0 = 1438
-    d.rounded_rectangle((28, info_y0, W-28, H-110), radius=24, fill=(10, 34, 56), outline=(58, 107, 133), width=3)
-    d.text((52, info_y0+24), f"🎲  第 {game.round_number} 回合｜目前輪到：{cur.name}", font=get_font(28, True), fill=(245,245,247))
-    d.text((52, info_y0+70), f"💰  ${cur.money}  ｜  📍  {BOARD[cur.position]['name']}  ｜  🏠  {len(cur.properties)} 物業", font=get_font(24, True), fill=(244, 227, 151))
-    act = html.unescape(game.last_action_text.replace('<b>','').replace('</b>','').replace('<code>','').replace('</code>',''))
-    af = fit_text(d, act[:100], W-160, 27, 16, True)
-    d.text((52, info_y0+118), f"✨  {act[:100]}", font=af, fill=(235, 240, 244))
-    # 假按鈕區（實際按鈕仍由 Telegram 下方提供）
-    btn_y = H - 92
-    for bx, bw, txt, color in [(34, 480, '👉  前往操作', (26, 83, 136)), (560, 470, '📊  查看排名', (23, 72, 117)), (1070, 500, '🗺  查看地圖', (25, 80, 130))]:
-        d.rounded_rectangle((bx, btn_y, bx+bw, H-28), radius=22, fill=color, outline=(114, 164, 196), width=2)
-        _draw_centered(d, (bx, btn_y, bx+bw, H-28), txt, get_font(24, True), (255,255,255))
-
+    # ==== 輸出 ====
     out = io.BytesIO()
+    img = img.convert('RGB')
     img.save(out, format='PNG', optimize=True)
     out.seek(0)
     try:
