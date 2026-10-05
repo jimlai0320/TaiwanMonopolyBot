@@ -284,11 +284,11 @@ def generate_group_board_images(game: Game):
         side_h = (inner_bottom - inner_top) / side_n
 
         # 取中間分界：左右邊格子的第 8 / 9 列之間，屬於格線邊界，不會切到格子。
+        # 這裡不要再做重疊，否則 Telegram 直向堆疊時會看起來「沒對齊」或重複一段。
         split_boundary = int(round(inner_top + side_h * 8))
-        overlap = 72  # 小幅重疊，讓上下更有連續感
 
-        top_end = min(h, split_boundary + overlap)
-        bottom_start = max(0, split_boundary - overlap)
+        top_end = split_boundary
+        bottom_start = split_boundary
 
         top = full.crop((0, 0, w, top_end))
         bottom = full.crop((0, bottom_start, w, h))
