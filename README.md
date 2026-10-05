@@ -1,18 +1,16 @@
-# 台灣大富翁 Telegram Bot（多檔案版）
+# 台灣大富翁 Telegram Bot — 32 格版
 
-## 檔案結構
+目前整合版本：
 
-- `main.py`：啟動 Bot
-- `config.py`：遊戲參數
-- `board_data.py`：48 格地圖與機會事件
-- `models.py`：Player / Game
-- `helpers.py`：租金、資產、移動等共用計算
-- `game_logic.py`：回合、買地、租金、監獄、破產、AI
-- `renderer.py`：棋盤圖片；要改美術主要改這裡
-- `ui.py`：Telegram 群組與私訊 UI
-- `handlers.py`：指令與按鈕處理
-- `health.py`：Render health check
-- `assets/taiwan_bg.png`：中央台灣背景圖
+- 32 格正式地圖
+- 所有格子固定同尺寸
+- 單張 Telegram 棋盤圖
+- 中央卡通精緻台灣背景
+- 第一批 10 格使用正式生成素材
+- 其餘格子由 renderer 暫時繪製，之後可逐批替換成正式素材
+- 2～8 人
+- 快速模式 / 經典模式
+- 群組顯示棋盤，私訊操作
 
 ## Render
 
@@ -26,24 +24,14 @@ Start Command:
 python main.py
 ```
 
-Environment Variable:
-```text
-BOT_TOKEN=你的 Telegram Bot Token
-```
+環境變數：
+- `BOT_TOKEN`
 
-## 修改 UI
-
-目前主棋盤採 **直式長圖、48 格繞一圈、8/16/8/16**。
-想換背景或外觀，優先修改 `renderer.py` 與 `assets/taiwan_bg.png`，不需要碰遊戲規則。
-
-
-## Telegram 顯示優化
-群組棋盤會先生成完整直式環島版，再自動依格線位置裁成上下兩張連續圖片；兩張之間會保留少量重疊，避免裁到格子。
-這不是把地圖拆成兩套規則，而是同一張完整棋盤的兩個視窗，目的是避免 Telegram 把超長照片縮得太小。
-私訊只顯示文字與操作按鈕，降低記憶體與上傳流量。
-
-
-## 最新整合
-
-- 已整合新的「卡通精緻版中央台灣背景」素材到 `assets/taiwan_bg.png`。
-- 群組棋盤會使用這張新背景作為中央主視覺。
+## 主要檔案
+- `board_data.py`：32 格地圖資料
+- `renderer.py`：統一格子棋盤 UI
+- `game_logic.py`：遊戲邏輯
+- `ui.py`：Telegram 群組 / 私訊 UI
+- `handlers.py`：指令與按鈕事件
+- `assets/taiwan_bg.png`：中央背景
+- `assets/tiles/`：格子素材

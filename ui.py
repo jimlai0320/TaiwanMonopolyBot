@@ -24,7 +24,7 @@ def button(text, callback_data=None, url=None, style=None):
 
 def lobby_text(game: Game):
     mode = "⚡ 30回合快速模式" if game.mode == "quick" else "🏆 經典淘汰模式"
-    lines = ["🏙 <b>【台灣大富翁 48格】</b>", "", f"👥 玩家 {len(game.players)}/{MAX_PLAYERS}", f"🎮 模式：{mode}"]
+    lines = ["🏙 <b>【台灣大富翁 32格】</b>", "", f"👥 玩家 {len(game.players)}/{MAX_PLAYERS}", f"🎮 模式：{mode}"]
     for i,p in enumerate(game.players,1):
         lines.append(f"{i}. {'🤖' if p.is_bot else '👤'} {p.safe_name}")
     lines += ["", "2～8 人可開始；建議 4～6 人。", "不足人數可補電腦到 4 人。"]
@@ -121,25 +121,26 @@ def private_keyboard(game: Game, player: Player):
     return InlineKeyboardMarkup(rows)
 
 async def safe_edit_or_send_board(game: Game, context):
-    """群組使用兩張近方形大圖，避免 Telegram 把超長圖縮得太小。"""
+    """32 格版直接使用一張完整棋盤；尺寸已縮短，Telegram 內可直接觀看。"""
     caption = board_caption(game)
     markup = board_keyboard(game, context.bot.username or "")
-    top_img, bottom_img = generate_group_board_images(game)
+    board_img = generate_board_image(game)
 
-    # 已有兩張棋盤訊息：直接更新。
-    if game.board_message_id and game.board_message_id2:
+    if game.board_message_id:
         try:
             await context.bot.edit_message_media(
                 chat_id=game.chat_id,
                 message_id=game.board_message_id,
-                media=InputMediaPhoto(media=top_img, parse_mode="HTML"),
-            )
-            await context.bot.edit_message_media(
-                chat_id=game.chat_id,
-                message_id=game.board_message_id2,
-                media=InputMediaPhoto(media=bottom_img, caption=caption, parse_mode="HTML"),
+                media=InputMediaPhoto(media=board_img, caption=caption, parse_mode="HTML"),
                 reply_markup=markup,
             )
+            # 舊雙圖版本若殘留第二張，移除一次。
+            if game.board_message_id2:
+                try:
+                    await context.bot.delete_message(chat_id=game.chat_id, message_id=game.board_message_id2)
+                except Exception:
+                    pass
+                game.board_message_id2 = None
             return
         except BadRequest as e:
             if "Message is not modified" in str(e):
@@ -147,9 +148,9 @@ async def safe_edit_or_send_board(game: Game, context):
         except RetryAfter as e:
             await asyncio.sleep(float(e.retry_after))
         except Exception:
-            logging.exception("更新群組雙圖棋盤失敗")
+            logging.exception("更新群組棋盤失敗")
 
-    # 舊版若只留下一張訊息，先嘗試刪掉，避免殘留。
+    # 舊訊息殘留時先清掉。
     for mid in (game.board_message_id, game.board_message_id2):
         if mid:
             try:
@@ -160,28 +161,21 @@ async def safe_edit_or_send_board(game: Game, context):
     game.board_message_id2 = None
 
     try:
-        msg1 = await context.bot.send_photo(
+        msg = await context.bot.send_photo(
             chat_id=game.chat_id,
-            photo=top_img,
-            parse_mode="HTML",
-        )
-        msg2 = await context.bot.send_photo(
-            chat_id=game.chat_id,
-            photo=bottom_img,
+            photo=board_img,
             caption=caption,
             reply_markup=markup,
             parse_mode="HTML",
         )
-        game.board_message_id = msg1.message_id
-        game.board_message_id2 = msg2.message_id
+        game.board_message_id = msg.message_id
     except Exception:
-        logging.exception("發送群組雙圖棋盤失敗")
+        logging.exception("發送群組棋盤失敗")
     finally:
-        for b in (top_img, bottom_img):
-            try:
-                b.close()
-            except Exception:
-                pass
+        try:
+            board_img.close()
+        except Exception:
+            pass
 
 async def send_private_ui(game: Game, player: Player, context):
     """

@@ -28,7 +28,7 @@ def main():
     app.add_handler(CommandHandler("cancel", cancel_command))
     app.add_handler(CallbackQueryHandler(callback_router, pattern=r"^mono_"))
     app.add_error_handler(error_handler)
-    logging.info("台灣大富翁 48格 Bot 啟動")
+    logging.info("台灣大富翁 32格 Bot 啟動")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":

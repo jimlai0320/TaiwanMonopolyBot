@@ -23,7 +23,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             p = next((p for p in game.players if p.user_id == update.effective_user.id), None)
             if p:
                 await send_private_ui(game,p,context); return
-    await update.message.reply_text("🏙 <b>台灣大富翁 48格</b>\n\n請到群組輸入 /newgame 建立遊戲。\n2～8 人可玩。", parse_mode="HTML")
+    await update.message.reply_text("🏙 <b>台灣大富翁 32格</b>\n\n請到群組輸入 /newgame 建立遊戲。\n2～8 人可玩。", parse_mode="HTML")
 
 async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type == "private":
@@ -196,7 +196,7 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "mono_assets":
         await q.answer(player_assets_text(game,player),show_alert=True); return
     if data == "mono_map":
-        await q.answer(f"48格地圖｜你目前在第 {player.position+1} 格：{BOARD[player.position]['name']}",show_alert=True); return
+        await q.answer(f"32格地圖｜你目前在第 {player.position+1} 格：{BOARD[player.position]['name']}",show_alert=True); return
 
     async with game.lock:
         if current_player(game)!=player or player.bankrupt:
