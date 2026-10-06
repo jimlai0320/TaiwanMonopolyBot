@@ -4,12 +4,13 @@ import asyncio
 import logging
 import random
 from telegram import Update, BotCommand
-from telegram.ext import ContextTypes
-from config import START_MONEY, MAX_PLAYERS, MIN_PLAYERS
+from telegram.ext import ContextTypes, Application
+from telegram.error import RetryAfter, TimedOut, NetworkError
+from config import START_MONEY, MAX_PLAYERS, MIN_PLAYERS, JAIL_FINE
 from board_data import BOARD
 from models import Player, Game, games, user_to_chat
 from helpers import find_game_by_user, current_player, total_asset_value, mortgage_value
-from ui import lobby_text, lobby_keyboard, player_assets_text, refresh_all_ui
+from ui import lobby_text, lobby_keyboard, player_assets_text, refresh_all_ui, clear_purchase_prompt
 from game_logic import (
     do_roll, buy_property, do_jail_choice, upgrade_current_property,
     creditor_from_key, bankrupt_player, settle_pending_debt, after_action_advance,
@@ -17,13 +18,11 @@ from game_logic import (
 )
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.type == "private":
-        game = find_game_by_user(update.effective_user.id)
-        if game:
-            p = next((p for p in game.players if p.user_id == update.effective_user.id), None)
-            if p:
-                await send_private_ui(game,p,context); return
-    await update.message.reply_text("🏙 <b>台灣大富翁 32格</b>\n\n請到群組輸入 /newgame 建立遊戲。\n2～8 人可玩。", parse_mode="HTML")
+    await update.message.reply_text(
+        "🏙 <b>台灣大富翁 32格</b>\n\n請到群組輸入 /newgame 建立遊戲。\n"
+        "擲骰子、購買地產及其他操作都在群組棋盤下方，不需要私訊。\n2～8 人可玩。",
+        parse_mode="HTML",
+    )
 
 async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type == "private":
@@ -122,6 +121,8 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not game:
         await update.message.reply_text("目前沒有遊戲。"); return
     if game.turn_task: game.turn_task.cancel()
+    game.finished = True
+    await clear_purchase_prompt(game,context)
     for p in game.players:
         if p.user_id: user_to_chat.pop(p.user_id,None)
     games.pop(game.chat_id,None)
@@ -139,6 +140,17 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q=update.callback_query; data=q.data or ""; uid=q.from_user.id
+    revision = None
+    if "|" in data:
+        data, value = data.rsplit("|", 1)
+        try:
+            revision = int(value)
+        except ValueError:
+            await q.answer("按鈕無效，請使用最新棋盤。", show_alert=True)
+            return
+    if update.effective_chat.type == "private":
+        await q.answer("操作已移到群組，請使用群組的最新棋盤。", show_alert=True)
+        return
 
     if data == "mono_join":
         game=games.get(update.effective_chat.id)
@@ -175,6 +187,9 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "mono_cancel":
         game=games.get(update.effective_chat.id)
         if not game: await q.answer("找不到遊戲。"); return
+        game.finished = True
+        if game.turn_task: game.turn_task.cancel()
+        await clear_purchase_prompt(game,context)
         for p in game.players:
             if p.user_id: user_to_chat.pop(p.user_id,None)
         games.pop(game.chat_id,None)
@@ -182,60 +197,104 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception: pass
         return
 
-    game=find_game_by_user(uid)
-    if not game:
-        await q.answer("找不到你的遊戲。",show_alert=True); return
-    player=next((p for p in game.players if p.user_id==uid),None)
-    if not player:
-        await q.answer("你不在這場遊戲。",show_alert=True); return
+    # 依訊息所在群組查找牌局，避免同一人在不同群組操作串場。
+    game = games.get(update.effective_chat.id)
+    if not game or not game.started:
+        await q.answer("這個群組目前沒有進行中的遊戲。", show_alert=True)
+        return
+    player = next((p for p in game.players if p.user_id == uid), None)
 
     if data == "mono_status":
-        ranking=sorted(game.players,key=lambda p:total_asset_value(game,p),reverse=True)
-        txt="\n".join(f"{i}. {p.name}｜${total_asset_value(game,p)}{' ☠' if p.bankrupt else ''}" for i,p in enumerate(ranking,1))
-        await q.answer(txt,show_alert=True); return
+        ranking = sorted(game.players, key=lambda p: total_asset_value(game,p), reverse=True)
+        lines = ["📊 <b>目前資產排名</b>"]
+        for i, p in enumerate(ranking, 1):
+            lines.append(f"{i}. {p.safe_name}｜現金 ${p.money}｜地產 {len(p.properties)}｜總資產 ${total_asset_value(game,p)}{'｜破產' if p.bankrupt else ''}")
+        await q.answer()
+        await context.bot.send_message(chat_id=game.chat_id, text="\n".join(lines), parse_mode="HTML")
+        return
     if data == "mono_assets":
-        await q.answer(player_assets_text(game,player),show_alert=True); return
+        if player is None:
+            await q.answer("你不在這場遊戲。", show_alert=True)
+            return
+        await q.answer()
+        await context.bot.send_message(chat_id=game.chat_id, text=player_assets_text(game,player), parse_mode="HTML")
+        return
     if data == "mono_map":
-        await q.answer(f"32格地圖｜你目前在第 {player.position+1} 格：{BOARD[player.position]['name']}",show_alert=True); return
+        curr = current_player(game)
+        await q.answer(f"32格地圖｜{curr.name} 目前在第 {curr.position+1} 格：{BOARD[curr.position]['name']}", show_alert=True)
+        return
 
     async with game.lock:
-        if current_player(game)!=player or player.bankrupt:
-            await q.answer("現在不是你的回合。",show_alert=True); return
-        if game.turn_task: game.turn_task.cancel()
-
-        if data == "mono_roll":
-            await q.answer("🎲 擲骰子！"); await do_roll(game,player,context); return
-        if data == "mono_buy":
-            await q.answer("購買！"); await buy_property(game,player,True,context); return
-        if data == "mono_pass_buy":
-            await q.answer("已放棄。"); await buy_property(game,player,False,context); return
-        if data == "mono_jail_pay":
-            await q.answer("支付保釋金。"); await do_jail_choice(game,player,context,pay=True); return
-        if data == "mono_jail_roll":
-            await q.answer("試擲！"); await do_jail_choice(game,player,context,pay=False); return
-        if data == "mono_upgrade":
-            ok=await upgrade_current_property(game,player,context)
-            await q.answer("升級完成！" if ok else "目前無法升級。",show_alert=not ok); return
-        if data.startswith("mono_mortgage:") and game.phase=="debt":
-            try: idx=int(data.split(":",1)[1])
-            except Exception: await q.answer(); return
-            if idx not in player.properties or idx in player.mortgaged:
-                await q.answer("無法抵押。",show_alert=True); return
-            player.mortgaged.add(idx); value=mortgage_value(idx); player.money+=value
-            game.last_action_text=f"🏦 {player.safe_name} 抵押【{BOARD[idx]['name']}】取得 ${value}。"
-            if player.money>=game.pending_debt_amount:
-                await q.answer("籌款完成！"); await settle_pending_debt(game,player,context)
-            else:
-                await q.answer(f"抵押取得 ${value}"); await refresh_all_ui(game,context)
+        if game.finished:
+            await q.answer("遊戲已結束。", show_alert=True)
             return
-        if data == "mono_bankrupt" and game.phase=="debt":
-            receiver=creditor_from_key(game,game.pending_creditor_key)
-            if receiver: receiver.money += player.money
-            player.money=0; bankrupt_player(game,player,receiver); game.phase="roll"
-            game.last_action_text=f"☠️ {player.safe_name} 宣告破產。"
-            await q.answer("已宣告破產。"); await after_action_advance(game,player,context); return
-
-    await q.answer()
+        expected_message = game.purchase_prompt_id if game.phase == "buy" and game.purchase_prompt_id else game.board_message_id2
+        if (revision != game.action_revision or q.message.message_id != expected_message):
+            await q.answer("這是舊操作按鈕，請使用群組最新棋盤。", show_alert=True)
+            return
+        if player is None or current_player(game) != player or player.bankrupt:
+            await q.answer(f"現在輪到 {current_player(game).name}，只有他可以操作。", show_alert=True)
+            return
+        phases = {
+            "mono_roll": "roll", "mono_buy": "buy", "mono_pass_buy": "buy",
+            "mono_jail_pay": "jail", "mono_jail_roll": "jail", "mono_upgrade": "roll",
+            "mono_bankrupt": "debt",
+        }
+        required = "debt" if data.startswith("mono_mortgage:") else phases.get(data)
+        if required is None or required != game.phase:
+            await q.answer("這個操作目前不可用。", show_alert=True)
+            return
+        if data == "mono_jail_pay" and player.money < JAIL_FINE:
+            await q.answer("現金不足，請選擇試擲雙數。", show_alert=True)
+            return
+        idx = None
+        if data.startswith("mono_mortgage:"):
+            try:
+                idx = int(data.split(":",1)[1])
+            except ValueError:
+                await q.answer("地產按鈕無效。", show_alert=True)
+                return
+            if idx not in player.properties or idx in player.mortgaged:
+                await q.answer("無法抵押。", show_alert=True)
+                return
+        if game.turn_task:
+            game.turn_task.cancel()
+        await q.answer("操作已收到。")
+        if data == "mono_roll":
+            await do_roll(game,player,context)
+        elif data == "mono_buy":
+            await clear_purchase_prompt(game,context)
+            await buy_property(game,player,True,context)
+        elif data == "mono_pass_buy":
+            await clear_purchase_prompt(game,context)
+            await buy_property(game,player,False,context)
+        elif data == "mono_jail_pay":
+            await do_jail_choice(game,player,context,pay=True)
+        elif data == "mono_jail_roll":
+            await do_jail_choice(game,player,context,pay=False)
+        elif data == "mono_upgrade":
+            ok = await upgrade_current_property(game,player,context)
+            if not ok:
+                await context.bot.send_message(chat_id=game.chat_id, text="目前無法升級：請確認現金、地產等級及抵押狀態。")
+            start_turn_timer(game,context)
+        elif idx is not None:
+            player.mortgaged.add(idx)
+            value = mortgage_value(idx)
+            player.money += value
+            game.last_action_text = f"🏦 {player.safe_name} 抵押【{BOARD[idx]['name']}】取得 ${value}。"
+            if player.money >= game.pending_debt_amount:
+                await settle_pending_debt(game,player,context)
+            else:
+                await refresh_all_ui(game,context)
+        elif data == "mono_bankrupt":
+            receiver = creditor_from_key(game,game.pending_creditor_key)
+            if receiver:
+                receiver.money += player.money
+            player.money = 0
+            bankrupt_player(game,player,receiver)
+            game.phase = "roll"
+            game.last_action_text = f"☠️ {player.safe_name} 宣告破產。"
+            await after_action_advance(game,player,context)
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logging.exception("Telegram update 發生未處理錯誤", exc_info=context.error)

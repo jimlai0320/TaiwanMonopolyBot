@@ -33,6 +33,9 @@ class Game:
     mode: str = "quick"  # quick / classic
     current_index: int = 0
     round_number: int = 1
+    purchase_prompt_id: Optional[int] = None
+    pending_prompt_deletions: list[int] = field(default_factory=list)
+    action_revision: int = 0
     phase: str = "lobby"  # lobby / roll / buy / jail / debt / end
     board_message_id: Optional[int] = None
     board_message_id2: Optional[int] = None

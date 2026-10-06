@@ -192,7 +192,7 @@ async def finish_if_needed(game: Game, context):
         ranking = sorted(game.players, key=lambda p: total_asset_value(game,p), reverse=True)
         game.last_action_text = f"⏱ 30回合結束，{ranking[0].safe_name} 以最高總資產獲勝！"
     if game.finished:
-        if game.turn_task:
+        if game.turn_task and game.turn_task is not asyncio.current_task():
             game.turn_task.cancel()
         await refresh_all_ui(game, context)
         return True
