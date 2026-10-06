@@ -17,6 +17,29 @@ from game_logic import (
     start_turn_timer, run_bot_turn,
 )
 
+def assets_popup_text(game, player):
+    """Callback alert 上限 200 字元，完整列出摘要並盡量列入地產。"""
+    lines = [f"💼 我的資產｜{'已破產' if player.bankrupt else '遊戲中'}",
+             f"現金 ${player.money}｜總資產 ${total_asset_value(game, player)}",
+             f"位置：{BOARD[player.position]['name']}",
+             f"地產 {len(player.properties)} 處｜抵押 {len(player.mortgaged)} 處"]
+    if not player.properties:
+        lines.append("尚未持有地產")
+    for n, idx in enumerate(player.properties):
+        level = game.property_level.get(idx, 0)
+        label = "飯店" if level == 4 else f"{level}級" if level else "空地"
+        if idx in player.mortgaged:
+            label += "／抵押"
+        line = f"{BOARD[idx]['name']}：{label}"
+        # 留空間標示未列出的數量，也保守計算 UTF-16 長度。
+        candidate = "\n".join(lines + [line])
+        if len(candidate.encode("utf-16-le")) // 2 > 175:
+            lines.append(f"另有 {len(player.properties) - n} 處未列出")
+            break
+        lines.append(line)
+    return "\n".join(lines)
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🏙 <b>台灣大富翁 32格</b>\n\n請到群組輸入 /newgame 建立遊戲。\n"
@@ -206,18 +229,25 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "mono_status":
         ranking = sorted(game.players, key=lambda p: total_asset_value(game,p), reverse=True)
-        lines = ["📊 <b>目前資產排名</b>"]
+        lines = ["📊 總資產排名"]
         for i, p in enumerate(ranking, 1):
-            lines.append(f"{i}. {p.safe_name}｜現金 ${p.money}｜地產 {len(p.properties)}｜總資產 ${total_asset_value(game,p)}{'｜破產' if p.bankrupt else ''}")
-        await q.answer()
-        await context.bot.send_message(chat_id=game.chat_id, text="\n".join(lines), parse_mode="HTML")
+            name = (p.name or "玩家").replace("\n", " ")
+            name = name[:4] + ("…" if len(name) > 4 else "")
+            lines.append(f"{i}. {name} ${total_asset_value(game,p)}{'×' if p.bankrupt else ''}")
+        text = "\n".join(lines)
+        if len(text.encode("utf-16-le")) // 2 > 200:
+            # 長名稱或大額資產時，改以玩家加入序號，仍保留全部名次。
+            lines = ["📊 總資產排名（玩家序號）"]
+            for i, p in enumerate(ranking, 1):
+                lines.append(f"{i}. 玩家{game.players.index(p)+1} ${total_asset_value(game,p)}{'×' if p.bankrupt else ''}")
+            text = "\n".join(lines)
+        await q.answer(text, show_alert=True, cache_time=0)
         return
     if data == "mono_assets":
         if player is None:
             await q.answer("你不在這場遊戲。", show_alert=True)
             return
-        await q.answer()
-        await context.bot.send_message(chat_id=game.chat_id, text=player_assets_text(game,player), parse_mode="HTML")
+        await q.answer(assets_popup_text(game, player), show_alert=True, cache_time=0)
         return
     if data == "mono_map":
         curr = current_player(game)
