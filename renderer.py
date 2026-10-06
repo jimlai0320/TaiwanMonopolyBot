@@ -313,9 +313,9 @@ def _draw_center_map(img, draw):
 _PAWN_CACHE = {}
 
 
-def _pawn_sprite(color, width, height, active=False):
+def _pawn_sprite(color, width, height, active=False, number=1):
     """帶球形頭部、收腰和橢圓底座的立體桌遊棋子。"""
-    key = (tuple(color), width, height, active)
+    key = (tuple(color), width, height, active, number)
     if key in _PAWN_CACHE:
         return _PAWN_CACHE[key]
     scale = 2
@@ -326,11 +326,7 @@ def _pawn_sprite(color, width, height, active=False):
     def ellipse(box, **kwargs):
         d.ellipse(tuple(int(v * scale) for v in box), **kwargs)
 
-    # 投影和目前玩家的底座光圈。
-    ellipse((20, 162, 128, 185), fill=(0, 0, 0, 100))
-    if active:
-        ellipse((10, 155, 130, 186), fill=(255, 217, 92, 100),
-                outline=(255, 224, 130, 255), width=3 * scale)
+    # 先完成棋子本體，再統一描邊，避免輪廓融入卡片插畫。
 
     def shaded_part(mask, kind):
         edge = mask.filter(ImageFilter.MaxFilter(7))
@@ -385,7 +381,28 @@ def _pawn_sprite(color, width, height, active=False):
     mask = Image.new("L", (sw, sh), 0)
     ImageDraw.Draw(mask).ellipse((42*scale, 15*scale, 98*scale, 71*scale), fill=255)
     shaded_part(mask, "head"); mask.close()
-    result = sprite.resize((width, height), Image.Resampling.LANCZOS)
+    # 外深內白的雙層輪廓；亮、暗與同色背景上都能保持清晰。
+    alpha = sprite.getchannel("A")
+    white_edge = alpha.filter(ImageFilter.MaxFilter(21))
+    dark_edge = alpha.filter(ImageFilter.MaxFilter(29))
+    outlined = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
+    od = ImageDraw.Draw(outlined)
+    od.ellipse((8*scale, 157*scale, 132*scale, 189*scale),
+               fill=(12, 22, 38, 235), outline=(255, 255, 255, 255), width=3*scale)
+    if active:
+        od.ellipse((8*scale, 157*scale, 132*scale, 189*scale),
+                   fill=(255, 202, 45, 255), outline=(28, 32, 42, 255), width=3*scale)
+    outlined.paste((12, 22, 38, 255), (0, 0), dark_edge)
+    outlined.paste((255, 255, 255, 255), (0, 0), white_edge)
+    outlined.alpha_composite(sprite)
+    # 編號與玩家加入順序一致，避免只靠顏色辨識。
+    od = ImageDraw.Draw(outlined)
+    od.ellipse((48*scale, 103*scale, 92*scale, 147*scale),
+               fill=(15, 25, 42, 255), outline=(255, 255, 255, 255), width=2*scale)
+    od.text((70*scale, 124*scale), str(number), font=get_font(31*scale, True),
+            fill=(255, 255, 255, 255), anchor="mm")
+    result = outlined.resize((width, height), Image.Resampling.LANCZOS)
+    outlined.close(); alpha.close(); white_edge.close(); dark_edge.close()
     sprite.close()
     _PAWN_CACHE[key] = result
     return result
@@ -400,9 +417,9 @@ def _draw_pawns(img, draw, game):
     for pos, ids in occupied.items():
         x0, y0, x1, y1 = tile_coords(pos)
         count = len(ids)
-        columns = 1 if count == 1 else 2
+        columns = 1 if count == 1 else (2 if count <= 4 else (3 if count <= 6 else 4))
         rows = (count + columns - 1) // columns
-        width, height = (116, 158) if count == 1 else ((86, 117) if count <= 4 else (46, 63))
+        width, height = (140, 190) if count == 1 else ((94, 128) if count == 2 else ((65, 88) if count <= 4 else ((58, 79) if count <= 6 else (46, 63))))
         gap = 4
         block_h = rows * height + (rows - 1) * gap
         top = y0 + (CARD_H - block_h) // 2
@@ -413,7 +430,7 @@ def _draw_pawns(img, draw, game):
             x = x0 + (CARD_W - row_w) // 2 + col * (width + gap)
             y = top + row * (height + gap)
             pawn = _pawn_sprite(PLAYER_COLORS[pi % len(PLAYER_COLORS)], width, height,
-                                active=pi == game.current_index)
+                                active=pi == game.current_index, number=pi + 1)
             img.paste(pawn, (x, y), pawn)
 
 
