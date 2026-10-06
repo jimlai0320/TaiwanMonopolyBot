@@ -311,19 +311,40 @@ def _draw_center_map(img, draw):
 
 
 def _draw_pawns(draw, game):
+    """以大尺寸編號棋子顯示玩家；同格最多八人仍各自可辨識。"""
     occupied = {}
-    for pi, p in enumerate(game.players):
-        if not p.bankrupt:
-            occupied.setdefault(p.position, []).append(pi)
+    for pi, player in enumerate(game.players):
+        if not player.bankrupt:
+            occupied.setdefault(player.position, []).append(pi)
+
     for pos, ids in occupied.items():
         x0, y0, x1, y1 = tile_coords(pos)
+        count = len(ids)
+        columns = 1 if count == 1 else 2
+        rows = (count + columns - 1) // columns
+        diameter = 104 if count == 1 else (84 if count <= 4 else 60)
+        gap = 8
+        block_h = rows * diameter + (rows - 1) * gap
+        top = y0 + (CARD_H - block_h) // 2
+        radius = diameter // 2
+        font = get_font(int(diameter * 0.53), True)
+
         for n, pi in enumerate(ids):
-            c = PLAYER_COLORS[pi % len(PLAYER_COLORS)]
-            px = x1 - 28 - (n % 2) * 38
-            py = y1 - 48 - (n // 2) * 44
-            # 白色外圈，提高在卡片上的辨識度
-            draw.ellipse((px-15, py-15, px+15, py+15), fill=c, outline=(255,255,255), width=4)
-            draw.polygon([(px, py+9), (px-17, py+38), (px+17, py+38)], fill=c, outline=(255,255,255))
+            row, col = divmod(n, columns)
+            row_count = min(columns, count - row * columns)
+            row_w = row_count * diameter + (row_count - 1) * gap
+            cx = x0 + (CARD_W - row_w) // 2 + radius + col * (diameter + gap)
+            cy = top + radius + row * (diameter + gap)
+            color = PLAYER_COLORS[pi % len(PLAYER_COLORS)]
+            box = (cx-radius, cy-radius, cx+radius, cy+radius)
+            # 深色底邊與粗白框，避免棋子融入卡片插圖。
+            draw.ellipse((box[0]-3, box[1]-3, box[2]+3, box[3]+3), fill=(8, 24, 39))
+            draw.ellipse(box, fill=color, outline=(255, 255, 255), width=5)
+            if pi == game.current_index:
+                draw.ellipse((box[0]+7, box[1]+7, box[2]-7, box[3]-7),
+                             outline=(255, 218, 80), width=3)
+            draw_centered(draw, box, str(pi + 1), font, (255, 255, 255),
+                          stroke_width=2, stroke_fill=(8, 24, 39))
 
 
 def generate_board_image(game: Game) -> io.BytesIO:
