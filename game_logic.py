@@ -2,6 +2,8 @@
 """大富翁規則、金錢、回合、AI 與逾時處理。"""
 import asyncio
 import html
+import logging
+from telegram.error import TelegramError, BadRequest
 import random
 from typing import Optional
 from config import PASS_GO_REWARD, QUICK_ROUNDS, MAX_LEVEL, JAIL_FINE, ROLL_TIMEOUT, BUY_TIMEOUT, JAIL_TIMEOUT
@@ -227,17 +229,72 @@ async def after_action_advance(game: Game, player: Player, context):
     else:
         start_turn_timer(game, context, phase=game.phase)
 
+# 留出原生骰子動畫播放時間；Telegram 不提供客戶端播放完成回呼。
+DICE_ANIMATION_SECONDS = 4.0
+
+
+async def native_dice(game, player, context, count):
+    """呼叫者持有 game.lock；只採用 Telegram 回傳點數，不另抽籤。"""
+    previous_phase = game.phase
+    game.phase = "rolling"
+    game.action_revision += 1
+    if game.turn_task and game.turn_task is not asyncio.current_task():
+        game.turn_task.cancel()
+    messages, values = [], []
+    try:
+        for _ in range(count):
+            msg = await context.bot.send_dice(
+                chat_id=game.chat_id, emoji="🎲", disable_notification=True,
+                read_timeout=15, write_timeout=15, connect_timeout=10,
+            )
+            messages.append(msg.message_id)
+            if not msg.dice or not 1 <= msg.dice.value <= 6:
+                raise ValueError("Telegram returned an invalid dice result")
+            values.append(msg.dice.value)
+        await asyncio.sleep(DICE_ANIMATION_SECONDS)
+    except (TelegramError, ValueError):
+        # 發送逾時可能已送出，不能盲目重送或用本機點數冒充動畫結果。
+        logging.warning("原生骰子未完成，chat_id=%s", game.chat_id)
+        values = []
+    finally:
+        for mid in messages:
+            try:
+                await context.bot.delete_message(chat_id=game.chat_id, message_id=mid)
+            except BadRequest as exc:
+                if "message to delete not found" not in str(exc).lower():
+                    game.pending_prompt_deletions.append(mid)
+            except TelegramError:
+                game.pending_prompt_deletions.append(mid)
+        if not game.finished:
+            game.phase = previous_phase
+    if game.finished:
+        return None
+    if len(values) != count:
+        game.last_action_text = "⚠️ 骰子傳送未完成，本次不計步，請重新擲骰。"
+        await refresh_all_ui(game, context)
+        # 人類可立即重試，電腦及逾時代擲也有下一次機會。
+        game.turn_task = asyncio.create_task(turn_timeout(game, player, previous_phase, context))
+        return None
+    return tuple(values)
+
+
 async def do_roll(game: Game, player: Player, context, auto=False):
     if game.phase != "roll" or current_player(game) != player or player.bankrupt:
         return
-    d1,d2 = random.randint(1,6), random.randint(1,6)
+    dice = await native_dice(game, player, context, 2)
+    if dice is None:
+        return
+    d1, d2 = dice
     game.last_dice = (d1,d2)
     passed = move_player(player, d1+d2)
     prefix = "⏰ 系統代擲" if auto else "🎲 擲骰子"
     reward = f"，經過出發點 +${PASS_GO_REWARD}" if passed else ""
     game.last_action_text = f"{prefix}：{player.safe_name} 擲出 {d1}+{d2}={d1+d2}{reward}。"
+    roll_text = game.last_action_text
     game.extra_turn = (d1 == d2)
     result = await resolve_tile(game, player, context)
+    if game.last_action_text != roll_text:
+        game.last_action_text = roll_text + "\n" + game.last_action_text
     if result == "wait" or await finish_if_needed(game, context):
         if result == "wait" and game.phase == "buy":
             await refresh_all_ui(game, context)
@@ -276,7 +333,10 @@ async def do_jail_choice(game: Game, player: Player, context, pay=False, auto=Fa
         if player.is_bot: asyncio.create_task(run_bot_turn(game, context))
         else: start_turn_timer(game, context)
         return
-    roll = random.randint(1,6)
+    dice = await native_dice(game, player, context, 1)
+    if dice is None:
+        return
+    roll = dice[0]
     if roll % 2 == 0:
         player.jail_attempts = 0
         game.phase = "roll"
