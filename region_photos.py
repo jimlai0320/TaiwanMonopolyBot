@@ -58,10 +58,5 @@ def photo_source(index):
 
 
 def photo_credit(index):
-    filename, author, license_name, landmark = PHOTOS[index]
-    source = 'https://commons.wikimedia.org/wiki/File:' + quote(filename.replace(' ', '_'), safe='')
-    local = Path(__file__).resolve().parent / 'assets' / 'places' / f'{index+1:02d}.jpg'
-    processing = ' · 縮放／JPG壓縮' if local.is_file() else ''
-    return (f'📷 {html.escape(landmark)}｜{html.escape(author)}\n'
-            f'<a href="{source}">照片來源</a> · '
-            f'<a href="{LICENSE_URLS[license_name]}">{license_name}</a>{processing}')
+    """群組購地訊息不顯示照片來源說明；素材資料保留於 CREDITS.md。"""
+    return ""
