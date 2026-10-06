@@ -310,8 +310,88 @@ def _draw_center_map(img, draw):
     draw.rounded_rectangle((x0+5,y0+5,x1-5,y1-5), radius=26, fill=(80,177,216))
 
 
-def _draw_pawns(draw, game):
-    """以大尺寸編號棋子顯示玩家；同格最多八人仍各自可辨識。"""
+_PAWN_CACHE = {}
+
+
+def _pawn_sprite(color, width, height, active=False):
+    """帶球形頭部、收腰和橢圓底座的立體桌遊棋子。"""
+    key = (tuple(color), width, height, active)
+    if key in _PAWN_CACHE:
+        return _PAWN_CACHE[key]
+    scale = 2
+    sw, sh = 140 * scale, 190 * scale
+    sprite = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
+    d = ImageDraw.Draw(sprite)
+
+    def ellipse(box, **kwargs):
+        d.ellipse(tuple(int(v * scale) for v in box), **kwargs)
+
+    # 投影和目前玩家的底座光圈。
+    ellipse((20, 162, 128, 185), fill=(0, 0, 0, 100))
+    if active:
+        ellipse((10, 155, 130, 186), fill=(255, 217, 92, 100),
+                outline=(255, 224, 130, 255), width=3 * scale)
+
+    def shaded_part(mask, kind):
+        edge = mask.filter(ImageFilter.MaxFilter(7))
+        sprite.paste((255, 247, 222, 255), (0, 0), edge)
+        part = Image.new("RGBA", (sw, sh))
+        pixels, mp = part.load(), mask.load()
+        for y in range(sh):
+            for x in range(sw):
+                if not mp[x, y]:
+                    continue
+                xx, yy = x / scale, y / scale
+                if kind == "head":
+                    nx, ny = (xx - 70) / 28, (yy - 43) / 28
+                    nz = max(0, 1 - nx * nx - ny * ny) ** 0.5
+                    light = max(0, -0.48 * nx - 0.55 * ny + 0.68 * nz)
+                    shade = 0.40 + 0.60 * light
+                    shine = 0.48 * max(0, 1 - ((xx-59)/14)**2 - ((yy-30)/12)**2)**2
+                else:
+                    shade = 0.46 + 0.48 * max(0, 1 - ((xx-56)/62)**2)
+                    shine = 0.33 * max(0, 1 - abs(xx-49)/17)**3
+                    if kind == "base":
+                        shade *= 0.75 + 0.25 * max(0, 1 - (yy-143)/35)
+                rgb = tuple(min(255, int(v * shade + (255-v*shade) * shine)) for v in color)
+                pixels[x, y] = (*rgb, mp[x, y])
+        sprite.alpha_composite(part)
+        part.close(); edge.close()
+
+    # 曲線輪廓：細頸向下展開，底部向內收至底座。
+    points = []
+    def curve(p0, p1, p2, p3):
+        for i in range(25):
+            t = i / 24; u = 1-t
+            points.append((int((u**3*p0[0]+3*u*u*t*p1[0]+3*u*t*t*p2[0]+t**3*p3[0])*scale),
+                           int((u**3*p0[1]+3*u*u*t*p1[1]+3*u*t*t*p2[1]+t**3*p3[1])*scale)))
+    curve((57, 63), (60, 88), (48, 112), (34, 142))
+    curve((34, 142), (32, 156), (108, 156), (106, 142))
+    curve((106, 142), (92, 112), (80, 88), (83, 63))
+    mask = Image.new("L", (sw, sh), 0)
+    md = ImageDraw.Draw(mask); md.polygon(points, fill=255)
+    shaded_part(mask, "body"); mask.close()
+
+    # 底座側面和上緣，營造厚度。
+    mask = Image.new("L", (sw, sh), 0); md = ImageDraw.Draw(mask)
+    md.rounded_rectangle((22*scale, 149*scale, 118*scale, 165*scale), radius=8*scale, fill=255)
+    md.ellipse((22*scale, 150*scale, 118*scale, 178*scale), fill=255)
+    shaded_part(mask, "base"); mask.close()
+    ellipse((23, 139, 117, 165), fill=tuple(int(v*0.85) for v in color)+(255,),
+            outline=(255, 239, 201, 255), width=2*scale)
+    d.arc((30*scale, 142*scale, 110*scale, 160*scale), 190, 290,
+          fill=(255, 255, 255, 150), width=2*scale)
+
+    mask = Image.new("L", (sw, sh), 0)
+    ImageDraw.Draw(mask).ellipse((42*scale, 15*scale, 98*scale, 71*scale), fill=255)
+    shaded_part(mask, "head"); mask.close()
+    result = sprite.resize((width, height), Image.Resampling.LANCZOS)
+    sprite.close()
+    _PAWN_CACHE[key] = result
+    return result
+
+
+def _draw_pawns(img, draw, game):
     occupied = {}
     for pi, player in enumerate(game.players):
         if not player.bankrupt:
@@ -322,29 +402,19 @@ def _draw_pawns(draw, game):
         count = len(ids)
         columns = 1 if count == 1 else 2
         rows = (count + columns - 1) // columns
-        diameter = 104 if count == 1 else (84 if count <= 4 else 60)
-        gap = 8
-        block_h = rows * diameter + (rows - 1) * gap
+        width, height = (116, 158) if count == 1 else ((86, 117) if count <= 4 else (46, 63))
+        gap = 4
+        block_h = rows * height + (rows - 1) * gap
         top = y0 + (CARD_H - block_h) // 2
-        radius = diameter // 2
-        font = get_font(int(diameter * 0.53), True)
-
         for n, pi in enumerate(ids):
             row, col = divmod(n, columns)
             row_count = min(columns, count - row * columns)
-            row_w = row_count * diameter + (row_count - 1) * gap
-            cx = x0 + (CARD_W - row_w) // 2 + radius + col * (diameter + gap)
-            cy = top + radius + row * (diameter + gap)
-            color = PLAYER_COLORS[pi % len(PLAYER_COLORS)]
-            box = (cx-radius, cy-radius, cx+radius, cy+radius)
-            # 深色底邊與粗白框，避免棋子融入卡片插圖。
-            draw.ellipse((box[0]-3, box[1]-3, box[2]+3, box[3]+3), fill=(8, 24, 39))
-            draw.ellipse(box, fill=color, outline=(255, 255, 255), width=5)
-            if pi == game.current_index:
-                draw.ellipse((box[0]+7, box[1]+7, box[2]-7, box[3]-7),
-                             outline=(255, 218, 80), width=3)
-            draw_centered(draw, box, str(pi + 1), font, (255, 255, 255),
-                          stroke_width=2, stroke_fill=(8, 24, 39))
+            row_w = row_count * width + (row_count - 1) * gap
+            x = x0 + (CARD_W - row_w) // 2 + col * (width + gap)
+            y = top + row * (height + gap)
+            pawn = _pawn_sprite(PLAYER_COLORS[pi % len(PLAYER_COLORS)], width, height,
+                                active=pi == game.current_index)
+            img.paste(pawn, (x, y), pawn)
 
 
 def generate_board_image(game: Game) -> io.BytesIO:
@@ -356,7 +426,7 @@ def generate_board_image(game: Game) -> io.BytesIO:
     _draw_center_map(img, draw)
     for i in range(len(BOARD)):
         _draw_tile(img, draw, game, i)
-    _draw_pawns(draw, game)
+    _draw_pawns(img, draw, game)
 
     out = io.BytesIO()
     img.save(out, format="PNG", optimize=True)
