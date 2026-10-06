@@ -428,7 +428,7 @@ def _draw_pawns(img, draw, game):
             img.paste(pawn, (x, y), pawn)
 
 
-def generate_board_image(game: Game) -> io.BytesIO:
+def _render_board(game: Game):
     img = Image.new("RGB", (W, H), (7, 24, 39))
     draw = ImageDraw.Draw(img)
     draw.rounded_rectangle((12, 12, W-12, H-12), radius=38,
@@ -439,27 +439,49 @@ def generate_board_image(game: Game) -> io.BytesIO:
         _draw_tile(img, draw, game, i)
     _draw_pawns(img, draw, game)
 
-    out = io.BytesIO()
-    img.save(out, format="PNG", optimize=True)
-    out.seek(0)
-    img.close()
-    return out
+    return img
+
+
+def generate_board_image(game: Game) -> io.BytesIO:
+    """保留完整 PNG 匯出介面；群組不走這條重複編碼路徑。"""
+    img = _render_board(game)
+    try:
+        out = io.BytesIO()
+        img.save(out, format="PNG", optimize=True)
+        out.seek(0)
+        return out
+    finally:
+        img.close()
 
 
 def generate_group_board_images(game: Game):
-    """切成 TG 上下兩張；切線精準落在第 5/6 列之間，不切卡片。"""
-    full_buf = generate_board_image(game)
-    full_buf.seek(0)
-    with Image.open(full_buf) as full:
-        full = full.convert("RGB")
-        # row 0..4 在上半，row 5..9 在下半；任何格子都不會被切開。
+    """先按格線切上下兩張，再壓縮；避免先編碼完整 PNG 又解碼。"""
+    full = _render_board(game)
+    buffers = []
+    try:
         split = BOARD_Y + 5 * CARD_H
-        top = full.crop((0, 0, W, split))
-        bottom = full.crop((0, split, W, H))
-        a, b = io.BytesIO(), io.BytesIO()
-        top.save(a, format="PNG", optimize=True)
-        bottom.save(b, format="PNG", optimize=True)
-        a.seek(0); b.seek(0)
-        top.close(); bottom.close()
-    full_buf.close()
-    return a, b
+        for name, box in (("board_top.jpg", (0, 0, W, split)),
+                          ("board_bottom.jpg", (0, split, W, H))):
+            part = full.crop(box)
+            try:
+                height = round(part.height * 1280 / part.width)
+                resized = part.resize((1280, height), Image.Resampling.LANCZOS)
+                try:
+                    out = io.BytesIO()
+                    out.name = name
+                    # 4:4:4 保留彩色字邊緣，品質 82 平衡細節與傳輸量。
+                    resized.save(out, format="JPEG", quality=82, subsampling=0,
+                                 optimize=True)
+                    out.seek(0)
+                    buffers.append(out)
+                finally:
+                    resized.close()
+            finally:
+                part.close()
+        return tuple(buffers)
+    except BaseException:
+        for out in buffers:
+            out.close()
+        raise
+    finally:
+        full.close()
