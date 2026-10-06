@@ -230,7 +230,7 @@ async def after_action_advance(game: Game, player: Player, context):
         start_turn_timer(game, context, phase=game.phase)
 
 # 留出原生骰子動畫播放時間；Telegram 不提供客戶端播放完成回呼。
-DICE_ANIMATION_SECONDS = 4.0
+DICE_ANIMATION_SECONDS = 10.0
 
 
 async def native_dice(game, player, context, count):

@@ -313,9 +313,9 @@ def _draw_center_map(img, draw):
 _PAWN_CACHE = {}
 
 
-def _pawn_sprite(color, width, height, active=False, number=1):
+def _pawn_sprite(color, width, height, active=False):
     """帶球形頭部、收腰和橢圓底座的立體桌遊棋子。"""
-    key = (tuple(color), width, height, active, number)
+    key = (tuple(color), width, height, active)
     if key in _PAWN_CACHE:
         return _PAWN_CACHE[key]
     scale = 2
@@ -395,12 +395,6 @@ def _pawn_sprite(color, width, height, active=False, number=1):
     outlined.paste((12, 22, 38, 255), (0, 0), dark_edge)
     outlined.paste((255, 255, 255, 255), (0, 0), white_edge)
     outlined.alpha_composite(sprite)
-    # 編號與玩家加入順序一致，避免只靠顏色辨識。
-    od = ImageDraw.Draw(outlined)
-    od.ellipse((48*scale, 103*scale, 92*scale, 147*scale),
-               fill=(15, 25, 42, 255), outline=(255, 255, 255, 255), width=2*scale)
-    od.text((70*scale, 124*scale), str(number), font=get_font(31*scale, True),
-            fill=(255, 255, 255, 255), anchor="mm")
     result = outlined.resize((width, height), Image.Resampling.LANCZOS)
     outlined.close(); alpha.close(); white_edge.close(); dark_edge.close()
     sprite.close()
@@ -430,7 +424,7 @@ def _draw_pawns(img, draw, game):
             x = x0 + (CARD_W - row_w) // 2 + col * (width + gap)
             y = top + row * (height + gap)
             pawn = _pawn_sprite(PLAYER_COLORS[pi % len(PLAYER_COLORS)], width, height,
-                                active=pi == game.current_index, number=pi + 1)
+                                active=pi == game.current_index)
             img.paste(pawn, (x, y), pawn)
 
 
