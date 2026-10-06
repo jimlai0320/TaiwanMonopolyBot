@@ -2,7 +2,7 @@
 """地區實景照片：Wikimedia Commons，保留作者、來源及授權。
 
 照片由 Telegram 讀取 960px 線上縮圖，首次成功後使用 Telegram file_id。
-不是 AI 生成圖片；來源圖未裁切，Commons 縮圖僅等比例縮放。
+不是 AI 生成圖片；來源圖未裁切；本機素材另經等比例縮放與 JPG 壓縮。
 可在 assets/places/ 放置 02.jpg（第2格）等同來源照片作本機備援。
 """
 import hashlib
@@ -58,6 +58,8 @@ def photo_source(index):
 def photo_credit(index):
     filename, author, license_name, landmark = PHOTOS[index]
     source = 'https://commons.wikimedia.org/wiki/File:' + quote(filename.replace(' ', '_'), safe='')
+    local = Path(__file__).resolve().parent / 'assets' / 'places' / f'{index+1:02d}.jpg'
+    processing = ' · 縮放／JPG壓縮' if local.is_file() else ''
     return (f'📷 {html.escape(landmark)}｜{html.escape(author)}\n'
             f'<a href="{source}">照片來源</a> · '
-            f'<a href="{LICENSE_URLS[license_name]}">{license_name}</a>')
+            f'<a href="{LICENSE_URLS[license_name]}">{license_name}</a>{processing}')

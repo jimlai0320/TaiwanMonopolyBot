@@ -62,7 +62,7 @@ def board_caption(game: Game):
     return "\n".join(lines)
 
 
-def board_keyboard(game: Game, bot_username: str = ""):
+def board_keyboard(game: Game, bot_username: str = "", *, purchase_fallback=False):
     rows = []
     if game.started and not game.finished:
         player = current_player(game)
@@ -78,7 +78,7 @@ def board_keyboard(game: Game, bot_username: str = ""):
             elif game.phase == "jail":
                 rows.append([action(f"💰 付 ${JAIL_FINE} 出獄", "mono_jail_pay", "success"),
                              action("🎲 試擲雙數", "mono_jail_roll")])
-            elif game.phase == "buy" and game.pending_property is not None and not game.purchase_prompt_id:
+            elif game.phase == "buy" and game.pending_property is not None and purchase_fallback:
                 tile = BOARD[game.pending_property]
                 rows.append([action(f"🏠 購買 ${tile.get('price',200)}", "mono_buy", "success"),
                              action("❌ 不買", "mono_pass_buy", "danger")])
@@ -108,52 +108,74 @@ def player_assets_text(game: Game, player: Player):
     return "\n".join(lines)
 
 async def safe_edit_or_send_board(game: Game, context):
-    """群組上下雙圖，操作按鈕放在下半張；兩張各自處理未變更。"""
+    """先完成上下兩張牌桌，暫時性錯誤保留原訊息；只補回確定遺失的圖片。"""
     caption = board_caption(game)
     markup = board_keyboard(game)
     top_img, bottom_img = generate_group_board_images(game)
-    try:
-        if game.board_message_id and game.board_message_id2:
-            try:
-                for mid, img, is_bottom in (
-                    (game.board_message_id, top_img, False),
-                    (game.board_message_id2, bottom_img, True),
-                ):
-                    img.seek(0)
-                    try:
-                        await context.bot.edit_message_media(
-                            chat_id=game.chat_id, message_id=mid,
-                            media=InputMediaPhoto(media=img, caption=caption if is_bottom else None,
-                                                  parse_mode="HTML" if is_bottom else None),
-                            reply_markup=markup if is_bottom else None,
-                        )
-                    except BadRequest as exc:
-                        if "message is not modified" not in str(exc).lower():
-                            raise
-                return
-            except RetryAfter as exc:
-                await asyncio.sleep(float(exc.retry_after))
-            except Exception:
-                logging.exception("更新群組雙圖棋盤失敗")
 
-        for mid in (game.board_message_id, game.board_message_id2):
-            if mid:
-                try:
-                    await context.bot.delete_message(chat_id=game.chat_id, message_id=mid)
-                except Exception:
-                    pass
-        game.board_message_id = None
-        game.board_message_id2 = None
-        top_img.seek(0); bottom_img.seek(0)
-        msg1 = await context.bot.send_photo(chat_id=game.chat_id, photo=top_img)
-        game.board_message_id = msg1.message_id
-        msg2 = await context.bot.send_photo(
-            chat_id=game.chat_id, photo=bottom_img, caption=caption,
-            reply_markup=markup, parse_mode="HTML",
-        )
-        game.board_message_id2 = msg2.message_id
-    except Exception:
-        logging.exception("發送群組雙圖棋盤失敗")
+    async def update_one(field, img, is_bottom):
+        for attempt in range(3):
+            img.seek(0)
+            mid = getattr(game, field)
+            try:
+                if mid is not None:
+                    await context.bot.edit_message_media(
+                        chat_id=game.chat_id, message_id=mid,
+                        media=InputMediaPhoto(media=img, caption=caption if is_bottom else None,
+                                              parse_mode="HTML" if is_bottom else None),
+                        reply_markup=markup if is_bottom else None,
+                    )
+                else:
+                    msg = await context.bot.send_photo(
+                        chat_id=game.chat_id, photo=img,
+                        caption=caption if is_bottom else None,
+                        reply_markup=markup if is_bottom else None,
+                        parse_mode="HTML" if is_bottom else None,
+                    )
+                    setattr(game, field, msg.message_id)
+                return True
+            except BadRequest as exc:
+                reason = str(exc).lower()
+                if "message is not modified" in reason:
+                    return True
+                if mid is not None and "message to edit not found" in reason:
+                    setattr(game, field, None)
+                    continue
+                logging.exception("更新牌桌失敗，保留既有圖片 field=%s", field)
+                return False
+            except RetryAfter as exc:
+                delay = exc.retry_after
+                delay = delay.total_seconds() if hasattr(delay, "total_seconds") else float(delay)
+                if attempt == 2 or delay > 8:
+                    logging.warning("牌桌暫時受限，保留既有圖片 field=%s", field)
+                    return False
+                await asyncio.sleep(delay + 0.2)
+            except (TimedOut, NetworkError):
+                if attempt == 2:
+                    logging.exception("牌桌更新逾時，保留既有圖片 field=%s", field)
+                    return False
+                await asyncio.sleep(0.5 * (attempt + 1))
+            except Exception:
+                logging.exception("更新牌桌失敗 field=%s", field)
+                return False
+        return False
+
+    try:
+        if not await update_one("board_message_id", top_img, False):
+            return False
+        # 上半張曾被手動刪除時，重建上下順序；一般更新不刪牌桌。
+        if game.board_message_id2 and game.board_message_id2 <= game.board_message_id:
+            try:
+                await context.bot.delete_message(chat_id=game.chat_id, message_id=game.board_message_id2)
+            except BadRequest as exc:
+                if "message to delete not found" not in str(exc).lower():
+                    logging.exception("無法修復牌桌順序")
+                    return False
+            except Exception:
+                logging.exception("無法修復牌桌順序")
+                return False
+            game.board_message_id2 = None
+        return await update_one("board_message_id2", bottom_img, True)
     finally:
         top_img.close(); bottom_img.close()
 
@@ -240,5 +262,17 @@ async def show_purchase_prompt(game: Game, context):
 async def refresh_all_ui(game: Game, context):
     game.action_revision += 1
     await clear_purchase_prompt(game, context)
+    # 先確保兩張牌桌都存在，再在其後新增地區照片。
+    board_ready = await safe_edit_or_send_board(game, context)
+    if not board_ready:
+        return
     await show_purchase_prompt(game, context)
-    await safe_edit_or_send_board(game, context)
+    if game.phase == "buy" and not game.finished and not game.purchase_prompt_id:
+        # 連文字購地訊息都發不出去時，把選項留在現有牌桌以便繼續遊戲。
+        try:
+            await context.bot.edit_message_reply_markup(
+                chat_id=game.chat_id, message_id=game.board_message_id2,
+                reply_markup=board_keyboard(game, purchase_fallback=True),
+            )
+        except Exception:
+            logging.exception("無法更新備援購地按鈕")
