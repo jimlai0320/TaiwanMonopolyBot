@@ -3,12 +3,12 @@
     "index": 1,
     "file": "02.jpg",
     "place": "基隆港",
-    "landmark": "基隆港全景",
-    "author": "Harrison Kuo",
+    "landmark": "基隆內港",
+    "author": "Bigmorr",
     "license": "CC BY-SA 4.0",
     "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
-    "source_page": "https://commons.wikimedia.org/wiki/File:Panorama_view_of_central_Keelung_and_the_harbor.png",
-    "download_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fa/Panorama_view_of_central_Keelung_and_the_harbor.png/960px-Panorama_view_of_central_Keelung_and_the_harbor.png"
+    "source_page": "https://commons.wikimedia.org/wiki/File:Keelung_Inner_Harbor_20230717.jpg",
+    "download_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/13/Keelung_Inner_Harbor_20230717.jpg/960px-Keelung_Inner_Harbor_20230717.jpg"
   },
   {
     "index": 2,
@@ -47,12 +47,12 @@
     "index": 6,
     "file": "07.jpg",
     "place": "西門町",
-    "landmark": "西門町夜景",
-    "author": "Edson Hiroshi Aoki",
-    "license": "CC BY-SA 4.0",
-    "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
-    "source_page": "https://commons.wikimedia.org/wiki/File:Ximending_banner.jpg",
-    "download_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9a/Ximending_banner.jpg/960px-Ximending_banner.jpg"
+    "landmark": "西門町徒步區夜景",
+    "author": "lumoplank",
+    "license": "CC0 1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "source_page": "https://commons.wikimedia.org/wiki/File:Ximen%2C_Taipei_-_Ximen4875.jpg",
+    "download_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/Ximen%2C_Taipei_-_Ximen4875.jpg/960px-Ximen%2C_Taipei_-_Ximen4875.jpg"
   },
   {
     "index": 8,
@@ -113,12 +113,12 @@
     "index": 14,
     "file": "15.jpg",
     "place": "九份",
-    "landmark": "九份老街",
-    "author": "Another Believer",
-    "license": "CC BY-SA 4.0",
-    "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
-    "source_page": "https://commons.wikimedia.org/wiki/File:Jiufen%2C_November_28%2C_2024_-_033_%28cropped%29.jpg",
-    "download_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/Jiufen%2C_November_28%2C_2024_-_033_%28cropped%29.jpg/960px-Jiufen%2C_November_28%2C_2024_-_033_%28cropped%29.jpg"
+    "landmark": "九份阿妹茶樓",
+    "author": "ume-y",
+    "license": "CC BY 2.0",
+    "license_url": "https://creativecommons.org/licenses/by/2.0/",
+    "source_page": "https://commons.wikimedia.org/wiki/File:A-Mei_Tea_House_in_Jiufen.jpg",
+    "download_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/22/A-Mei_Tea_House_in_Jiufen.jpg/960px-A-Mei_Tea_House_in_Jiufen.jpg"
   },
   {
     "index": 16,
@@ -135,12 +135,12 @@
     "index": 17,
     "file": "18.jpg",
     "place": "高鐵",
-    "landmark": "台灣高鐵列車",
-    "author": "4300streetcar",
-    "license": "CC BY 4.0",
-    "license_url": "https://creativecommons.org/licenses/by/4.0/",
-    "source_page": "https://commons.wikimedia.org/wiki/File:Taiwan_High_Speed_Rail_train_619_at_Taipei_Main_Station_March_2026.jpg",
-    "download_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/58/Taiwan_High_Speed_Rail_train_619_at_Taipei_Main_Station_March_2026.jpg/960px-Taiwan_High_Speed_Rail_train_619_at_Taipei_Main_Station_March_2026.jpg"
+    "landmark": "台灣高鐵700T列車",
+    "author": "Samson Ng . D201@EAL",
+    "license": "CC BY-SA 4.0",
+    "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "source_page": "https://commons.wikimedia.org/wiki/File:700T_EMU.jpg",
+    "download_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/42/700T_EMU.jpg/960px-700T_EMU.jpg"
   },
   {
     "index": 18,
@@ -180,11 +180,11 @@
     "file": "23.jpg",
     "place": "鹿港",
     "landmark": "鹿港老街",
-    "author": "Foxy Who \\(^∀^)/",
-    "license": "CC BY-SA 3.0",
-    "license_url": "https://creativecommons.org/licenses/by-sa/3.0/",
-    "source_page": "https://commons.wikimedia.org/wiki/File:%E9%B9%BF%E6%B8%AF%E8%80%81%E8%A1%97_%E4%B8%89%E6%A7%90%E6%8C%BA%E7%A7%80%E5%AE%85_Lukang_Old_Street_-_panoramio.jpg",
-    "download_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/%E9%B9%BF%E6%B8%AF%E8%80%81%E8%A1%97_%E4%B8%89%E6%A7%90%E6%8C%BA%E7%A7%80%E5%AE%85_Lukang_Old_Street_-_panoramio.jpg/960px-%E9%B9%BF%E6%B8%AF%E8%80%81%E8%A1%97_%E4%B8%89%E6%A7%90%E6%8C%BA%E7%A7%80%E5%AE%85_Lukang_Old_Street_-_panoramio.jpg"
+    "author": "Aa940325",
+    "license": "CC BY-SA 4.0",
+    "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "source_page": "https://commons.wikimedia.org/wiki/File:%E9%B9%BF%E6%B8%AF%E8%80%81%E8%A1%97.jpg",
+    "download_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/f/fd/%E9%B9%BF%E6%B8%AF%E8%80%81%E8%A1%97.jpg/960px-%E9%B9%BF%E6%B8%AF%E8%80%81%E8%A1%97.jpg"
   },
   {
     "index": 23,
@@ -223,12 +223,12 @@
     "index": 27,
     "file": "28.jpg",
     "place": "高雄",
-    "landmark": "高雄市天際線",
-    "author": "Surmoer",
-    "license": "CC BY-SA 3.0",
-    "license_url": "https://creativecommons.org/licenses/by-sa/3.0/",
-    "source_page": "https://commons.wikimedia.org/wiki/File:The_skyline_of_Kaohsiung_City.jpg",
-    "download_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/bf/The_skyline_of_Kaohsiung_City.jpg/960px-The_skyline_of_Kaohsiung_City.jpg"
+    "landmark": "高雄港與85大樓",
+    "author": "Chi-Hung Lin",
+    "license": "CC BY-SA 2.0",
+    "license_url": "https://creativecommons.org/licenses/by-sa/2.0/",
+    "source_page": "https://commons.wikimedia.org/wiki/File:%E9%AB%98%E9%9B%84%E6%B8%AF_Kaohsiung_Harbor_Skyline.jpg",
+    "download_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/80/%E9%AB%98%E9%9B%84%E6%B8%AF_Kaohsiung_Harbor_Skyline.jpg/960px-%E9%AB%98%E9%9B%84%E6%B8%AF_Kaohsiung_Harbor_Skyline.jpg"
   },
   {
     "index": 28,

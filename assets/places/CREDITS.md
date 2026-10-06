@@ -2,9 +2,9 @@
 
 照片為實景攝影，來源為 Wikimedia Commons。此素材包僅調整尺寸（最大 960 × 720）及轉換／壓縮為 JPG，未裁切。各照片依下列原授權提供；請保留本檔及遊戲中的署名。
 
-## 02.jpg — 基隆港 / 基隆港全景
-- 作者：Harrison Kuo
-- 來源：https://commons.wikimedia.org/wiki/File:Panorama_view_of_central_Keelung_and_the_harbor.png
+## 02.jpg — 基隆港 / 基隆內港
+- 作者：Bigmorr
+- 來源：https://commons.wikimedia.org/wiki/File:Keelung_Inner_Harbor_20230717.jpg
 - 授權：CC BY-SA 4.0 — https://creativecommons.org/licenses/by-sa/4.0/
 - 處理：等比例縮放、JPG 壓縮。
 
@@ -26,10 +26,10 @@
 - 授權：CC BY-SA 3.0 — https://creativecommons.org/licenses/by-sa/3.0/
 - 處理：等比例縮放、JPG 壓縮。
 
-## 07.jpg — 西門町 / 西門町夜景
-- 作者：Edson Hiroshi Aoki
-- 來源：https://commons.wikimedia.org/wiki/File:Ximending_banner.jpg
-- 授權：CC BY-SA 4.0 — https://creativecommons.org/licenses/by-sa/4.0/
+## 07.jpg — 西門町 / 西門町徒步區夜景
+- 作者：lumoplank
+- 來源：https://commons.wikimedia.org/wiki/File:Ximen%2C_Taipei_-_Ximen4875.jpg
+- 授權：CC0 1.0 — https://creativecommons.org/publicdomain/zero/1.0/
 - 處理：等比例縮放、JPG 壓縮。
 
 ## 09.jpg — 中正紀念堂 / 中正紀念堂
@@ -62,10 +62,10 @@
 - 授權：CC0 1.0 — https://creativecommons.org/publicdomain/zero/1.0/
 - 處理：等比例縮放、JPG 壓縮。
 
-## 15.jpg — 九份 / 九份老街
-- 作者：Another Believer
-- 來源：https://commons.wikimedia.org/wiki/File:Jiufen%2C_November_28%2C_2024_-_033_%28cropped%29.jpg
-- 授權：CC BY-SA 4.0 — https://creativecommons.org/licenses/by-sa/4.0/
+## 15.jpg — 九份 / 九份阿妹茶樓
+- 作者：ume-y
+- 來源：https://commons.wikimedia.org/wiki/File:A-Mei_Tea_House_in_Jiufen.jpg
+- 授權：CC BY 2.0 — https://creativecommons.org/licenses/by/2.0/
 - 處理：等比例縮放、JPG 壓縮。
 
 ## 17.jpg — 新竹 / 新竹迎曦門
@@ -74,10 +74,10 @@
 - 授權：CC BY-SA 3.0 — https://creativecommons.org/licenses/by-sa/3.0/
 - 處理：等比例縮放、JPG 壓縮。
 
-## 18.jpg — 高鐵 / 台灣高鐵列車
-- 作者：4300streetcar
-- 來源：https://commons.wikimedia.org/wiki/File:Taiwan_High_Speed_Rail_train_619_at_Taipei_Main_Station_March_2026.jpg
-- 授權：CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/
+## 18.jpg — 高鐵 / 台灣高鐵700T列車
+- 作者：Samson Ng . D201@EAL
+- 來源：https://commons.wikimedia.org/wiki/File:700T_EMU.jpg
+- 授權：CC BY-SA 4.0 — https://creativecommons.org/licenses/by-sa/4.0/
 - 處理：等比例縮放、JPG 壓縮。
 
 ## 19.jpg — 台中 / 台中國家歌劇院
@@ -99,9 +99,9 @@
 - 處理：等比例縮放、JPG 壓縮。
 
 ## 23.jpg — 鹿港 / 鹿港老街
-- 作者：Foxy Who \(^∀^)/
-- 來源：https://commons.wikimedia.org/wiki/File:%E9%B9%BF%E6%B8%AF%E8%80%81%E8%A1%97_%E4%B8%89%E6%A7%90%E6%8C%BA%E7%A7%80%E5%AE%85_Lukang_Old_Street_-_panoramio.jpg
-- 授權：CC BY-SA 3.0 — https://creativecommons.org/licenses/by-sa/3.0/
+- 作者：Aa940325
+- 來源：https://commons.wikimedia.org/wiki/File:%E9%B9%BF%E6%B8%AF%E8%80%81%E8%A1%97.jpg
+- 授權：CC BY-SA 4.0 — https://creativecommons.org/licenses/by-sa/4.0/
 - 處理：等比例縮放、JPG 壓縮。
 
 ## 24.jpg — 南投 / 南投藍田書院
@@ -122,10 +122,10 @@
 - 授權：CC BY 4.0 — https://creativecommons.org/licenses/by/4.0/
 - 處理：等比例縮放、JPG 壓縮。
 
-## 28.jpg — 高雄 / 高雄市天際線
-- 作者：Surmoer
-- 來源：https://commons.wikimedia.org/wiki/File:The_skyline_of_Kaohsiung_City.jpg
-- 授權：CC BY-SA 3.0 — https://creativecommons.org/licenses/by-sa/3.0/
+## 28.jpg — 高雄 / 高雄港與85大樓
+- 作者：Chi-Hung Lin
+- 來源：https://commons.wikimedia.org/wiki/File:%E9%AB%98%E9%9B%84%E6%B8%AF_Kaohsiung_Harbor_Skyline.jpg
+- 授權：CC BY-SA 2.0 — https://creativecommons.org/licenses/by-sa/2.0/
 - 處理：等比例縮放、JPG 壓縮。
 
 ## 29.jpg — 駁二特區 / 駁二藝術特區
@@ -139,3 +139,4 @@
 - 來源：https://commons.wikimedia.org/wiki/File:QIXINGTAN_beach_taiwan.jpg
 - 授權：CC BY-SA 4.0 — https://creativecommons.org/licenses/by-sa/4.0/
 - 處理：等比例縮放、JPG 壓縮。
+
