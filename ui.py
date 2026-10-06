@@ -111,7 +111,7 @@ async def safe_edit_or_send_board(game: Game, context):
     """先完成上下兩張牌桌，暫時性錯誤保留原訊息；只補回確定遺失的圖片。"""
     caption = board_caption(game)
     markup = board_keyboard(game)
-    top_img, bottom_img = generate_group_board_images(game)
+    top_img, bottom_img = await asyncio.to_thread(generate_group_board_images, game)
 
     async def update_one(field, img, is_bottom):
         for attempt in range(3):
